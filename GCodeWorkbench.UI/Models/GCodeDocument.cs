@@ -10,6 +10,7 @@ public class GCodeDocument : INotifyPropertyChanged
 {
     private List<GCodeLine> _lines = new();
     private List<GCodeLine>? _cachedFlatLines;
+    private List<(GCodeLine Line, int FlatIndex)>? _cachedVisibleLines;
     private int _selectedIndex = -1;
     private string _fileName = "untitled.nc";
     private bool _isDirty = false;
@@ -76,21 +77,30 @@ public class GCodeDocument : INotifyPropertyChanged
     /// <summary>
     /// 获取所有可见行（考虑折叠状态）
     /// </summary>
-    public IEnumerable<(GCodeLine Line, int FlatIndex)> GetVisibleLines()
+    public List<(GCodeLine Line, int FlatIndex)> GetVisibleLines()
     {
+        if (_cachedVisibleLines != null)
+        {
+            return _cachedVisibleLines;
+        }
+
+        var result = new List<(GCodeLine Line, int FlatIndex)>();
         int index = 0;
         foreach (var line in _lines)
         {
-            yield return (line, index++);
+            result.Add((line, index++));
             
             if (line.IsPolyline && !line.IsCollapsed)
             {
                 foreach (var child in line.Children)
                 {
-                    yield return (child, index++);
+                    result.Add((child, index++));
                 }
             }
         }
+
+        _cachedVisibleLines = result;
+        return result;
     }
     
     /// <summary>
@@ -115,12 +125,13 @@ public class GCodeDocument : INotifyPropertyChanged
     
     /// <summary>
     /// Invalidate the flat line cache.
-    /// Should be called whenever the structure of Lines (add/remove/reorder) changes.
-    /// Property changes (X/Y/Z) do not require invalidation unless they affect structure.
+    /// Should be called whenever the structure of Lines (add/remove/reorder) changes
+    /// OR when IsCollapsed changes (for visible lines).
     /// </summary>
     public void InvalidateCache()
     {
         _cachedFlatLines = null;
+        _cachedVisibleLines = null;
     }
 
     /// <summary>

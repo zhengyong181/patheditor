@@ -63,7 +63,7 @@
             <div class="flex flex-col" style="min-width: max-content;">
             @if (Document != null)
             {
-                <Virtualize Items="@Document.GetVisibleLines().ToList()" Context="item" OverscanCount="20" ItemSize="35">
+                <Virtualize Items="@Document.GetVisibleLines()" Context="item" OverscanCount="20" ItemSize="35">
                     @{
                         var line = item.Line;
                         var index = item.FlatIndex;
@@ -365,9 +365,8 @@
     private void ToggleCollapse(GCodeLine line)
     {
         line.IsCollapsed = !line.IsCollapsed;
-        // Invalidate cache when visibility changes?
-        // No, _cachedFlatLines is for ALL lines, not visible lines.
-        // GetVisibleLines logic uses IsCollapsed but structure is same.
+        // Invalidate cache when visibility changes
+        Document?.InvalidateCache();
         OnStateChanged.InvokeAsync();
     }
     

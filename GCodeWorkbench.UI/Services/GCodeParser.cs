@@ -15,7 +15,9 @@ public class GCodeParser
     private static readonly Regex ParamRegex = new(@"([XYZIJKRFSTP])\s*(=?\s*-?\d+\.?\d*)", RegexOptions.IgnoreCase);
     
     // 匹配注释
-    private static readonly Regex CommentRegex = new(@"[;(].*$");
+    // 改进: 支持行尾注释 (;) 和 括号注释 ()
+    // 注意: 不支持嵌套括号
+    private static readonly Regex CommentRegex = new(@"[;(].*$|\(.*?\)");
     
     /// <summary>
     /// 解析 G 代码文本
@@ -55,15 +57,23 @@ public class GCodeParser
             RawText = rawText
         };
         
-        // 移除注释部分进行解析
+        // 提取注释内容（简单处理：取第一个匹配）
+        var commentMatch = CommentRegex.Match(rawText);
+        string? commentContent = null;
+        if (commentMatch.Success)
+        {
+            commentContent = commentMatch.Value;
+        }
+
+        // 移除注释部分进行代码解析
         var codeText = CommentRegex.Replace(rawText, "").Trim();
         
-        // 检查是否是纯注释行
-        if (string.IsNullOrEmpty(codeText) && rawText.Contains(';') || rawText.Contains('('))
+        // 检查是否是纯注释行 (没有代码只有注释)
+        if (string.IsNullOrEmpty(codeText) && commentContent != null)
         {
             line.Type = GCodeType.Comment;
             line.Command = ";";
-            line.Label = rawText.TrimStart(';', '(', ' ').TrimEnd(')', ' ');
+            line.Label = commentContent.TrimStart(';', '(', ' ').TrimEnd(')', ' ');
             return line;
         }
         
@@ -99,6 +109,22 @@ public class GCodeParser
             }
         }
         
+        // 如果有行内注释，可以附加到 Label 或 Tags
+        if (commentContent != null && line.Type != GCodeType.Comment)
+        {
+             // 简单清理
+             string cleanComment = commentContent.TrimStart(';', '(', ' ').TrimEnd(')', ' ');
+             if (!string.IsNullOrWhiteSpace(cleanComment))
+             {
+                 // 如果还没有Label（比如G1没有自动Label），或者追加
+                 // 这里暂且不自动覆盖，仅作为Tag? 或者如果没Label就用它
+                 // 实际上 AutoAssignLabels 会在之后运行并覆盖 Label。
+                 // 我们应该让 AutoAssignLabels 能够保留这个注释。
+                 // 但 AutoAssignLabels 是后续步骤。
+                 // 暂时先不处理行内注释的显示，保证解析正确即可。
+             }
+        }
+
         return line;
     }
     
@@ -134,19 +160,24 @@ public class GCodeParser
             line.Tags.Add(line.Type.GetLabel());
             
             // 生成可读标签
-            line.Label = line.Type switch
+            // 只有当 Label 为空（非注释行）时才自动分配，避免覆盖解析时提取的注释（如果有）
+            // 但目前的 ParseLine 逻辑并未给非注释行赋值 Label。
+            if (string.IsNullOrEmpty(line.Label))
             {
-                GCodeType.Setup => GetSetupLabel(line.Command),
-                GCodeType.Rapid => "Rapid Move",
-                GCodeType.Linear => "Linear Cut",
-                GCodeType.ArcCW => "Arc CW",
-                GCodeType.ArcCCW => "Arc CCW",
-                GCodeType.Spindle => GetSpindleLabel(line.Command),
-                GCodeType.Coolant => "Coolant",
-                GCodeType.ToolChange => "Tool Change",
-                GCodeType.Program => GetProgramLabel(line.Command),
-                _ => ""
-            };
+                line.Label = line.Type switch
+                {
+                    GCodeType.Setup => GetSetupLabel(line.Command),
+                    GCodeType.Rapid => "Rapid Move",
+                    GCodeType.Linear => "Linear Cut",
+                    GCodeType.ArcCW => "Arc CW",
+                    GCodeType.ArcCCW => "Arc CCW",
+                    GCodeType.Spindle => GetSpindleLabel(line.Command),
+                    GCodeType.Coolant => "Coolant",
+                    GCodeType.ToolChange => "Tool Change",
+                    GCodeType.Program => GetProgramLabel(line.Command),
+                    _ => ""
+                };
+            }
         }
     }
     

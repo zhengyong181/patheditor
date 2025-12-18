@@ -1,4 +1,8 @@
 @namespace GCodeWorkbench.UI.Components
+@using GCodeWorkbench.UI.Services
+@using GCodeWorkbench.UI.Models
+@inject SimulationService SimService
+@implements IDisposable
 
 <div class="absolute bottom-3 right-3 z-20">
     <div class="bg-[#1b3224]/95 backdrop-blur border border-border-dark shadow-lg rounded-lg px-2.5 py-2 flex flex-col gap-2 w-64">
@@ -6,7 +10,7 @@
         <div class="flex items-center gap-2">
             <!-- Play/Pause Button -->
             <button class="size-7 shrink-0 rounded-full flex items-center justify-center bg-primary text-[#122118] hover:brightness-110 transition shadow-sm"
-                    @onclick="OnPlay">
+                    @onclick="OnPlayToggle">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
                     @if (IsPlaying)
                     {
@@ -68,52 +72,59 @@
 </div>
 
 @code {
-    [Parameter] public double CurrentTime { get; set; }
-    [Parameter] public double TotalTime { get; set; }
-    [Parameter] public double Progress { get; set; }
-    [Parameter] public bool IsPlaying { get; set; }
-    [Parameter] public double PlaybackSpeed { get; set; }
-    [Parameter] public EventCallback OnPlay { get; set; }
-    [Parameter] public EventCallback OnStop { get; set; }
-    [Parameter] public EventCallback<double> OnProgressChanged { get; set; }
-    [Parameter] public EventCallback<double> OnSpeedChanged { get; set; }
+    // Parameters are now mostly read-only properties derived from service state,
+    // except for event callbacks which we might keep if parent wants to know.
+    // However, to fully decouple, we rely on Service.
+
+    private double CurrentTime => SimService.CurrentTimeSeconds;
+    private double TotalTime => SimService.TotalTimeSeconds;
+    private double Progress => SimService.Progress * 100;
+    private bool IsPlaying => SimService.IsPlaying;
+
+    // We maintain a local copy of PlaybackSpeed because SimService doesn't expose it as a property we can easily bind to
+    // (It has SetSpeed method). Actually we can add a getter to Service or track it here.
+    // Let's assume we track it here or modify Service. Service has `_speedMultiplier` private.
+    // For now, let's just track locally and push to service.
+    private double PlaybackSpeed = 1.0;
 
     private double? _localSpeed; // Stores local speed during drag
 
-    protected override void OnParametersSet()
+    protected override void OnInitialized()
     {
-        // When parameters update from outside, clear local override unless dragging?
-        // Actually, we should sync unless we just emitted an event.
-        // For simplicity, we assume external updates are authoritative, 
-        // but to avoid jitter during drag, we might rely on Blazor's diffing or just update _localSpeed if it's null.
-        if (_localSpeed == null)
-        {
-            _localSpeed = PlaybackSpeed;
-        }
-        else if (Math.Abs(_localSpeed.Value - PlaybackSpeed) < 0.001)
-        {
-             // Synced
-        }
-        else
-        {
-             // External change overrides local? Or keep local if dragging? 
-             // Let's just track PlaybackSpeed if not dragging logic is complex.
-             // Simple approach: Always use PlaybackSpeed for calculation unless we are in the middle of an input event?
-             // Since we use oninput -> InvokeAsync -> Parent updates PlaybackSpeed -> ParametersSet,
-             // the cycle is fast enough. Let's just use data-binding properly.
-        }
+        SimService.OnStateChanged += OnSimStateChanged;
+    }
+
+    public void Dispose()
+    {
+        SimService.OnStateChanged -= OnSimStateChanged;
+    }
+
+    private void OnSimStateChanged(SimulationState state)
+    {
+        // This component DOES need to re-render at 60FPS to show smooth progress bar
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnPlayToggle()
+    {
+        if (IsPlaying) SimService.Pause();
+        else SimService.Play();
+    }
+
+    private void OnStop()
+    {
+        SimService.Stop();
     }
 
     private double GetCurrentDisplaySpeed()
     {
-        // Use local speed if set (during interaction), else parameter
         return _localSpeed ?? PlaybackSpeed;
     }
 
     private double GetScaledTime(double time)
     {
         double speed = GetCurrentDisplaySpeed();
-        if (speed <= 0.01) return time; // Avoid division by zero
+        if (speed <= 0.01) return time;
         return time / speed;
     }
 
@@ -126,7 +137,6 @@
         return $"{mins:D2}:{wholeSecs:D2}.{centisecs:D2}";
     }
     
-    // Slider Value: 0-100
     private double GetLocalSliderValue()
     {
         return SpeedToSlider(GetCurrentDisplaySpeed());
@@ -134,16 +144,13 @@
     
     private double SpeedToSlider(double speed)
     {
-        // Center (50) = 1.0
         if (speed <= 1.0)
         {
-            // 0.1 -> 1.0 maps to 0 -> 50
             double val = (speed - 0.1) / 0.9 * 50;
             return Math.Clamp(val, 0, 50);
         }
         else
         {
-            // 1.0 -> 5.0 maps to 50 -> 100
             double val = 50 + (speed - 1.0) / 4.0 * 50;
             return Math.Clamp(val, 50, 100);
         }
@@ -166,19 +173,11 @@
         if (double.TryParse(e.Value?.ToString(), out var sliderVal))
         {
             double newSpeed = SliderToSpeed(sliderVal);
+            if (newSpeed > 0.9 && newSpeed < 1.1) newSpeed = 1.0;
             
-            // Snap to 1.0 if close (0.9 - 1.1)
-            if (newSpeed > 0.9 && newSpeed < 1.1)
-            {
-                newSpeed = 1.0;
-                // We also need to force the slider visual to snap? 
-                // Because oninput is continuous, if we don't force render, the thumb might stay at 0.95 position
-                // while text shows 1.0.
-                // However, updated _localSpeed will correct GetLocalSliderValue.
-            }
-            
-            _localSpeed = newSpeed; // Immediate local update for UI responsiveness
-            OnSpeedChanged.InvokeAsync(newSpeed);
+            _localSpeed = newSpeed;
+            PlaybackSpeed = newSpeed;
+            SimService.SetSpeed(newSpeed);
         }
     }
 
@@ -186,7 +185,7 @@
     {
         if (double.TryParse(e.Value?.ToString(), out var progress))
         {
-            OnProgressChanged.InvokeAsync(progress);
+            SimService.Seek(progress / 100.0);
         }
     }
 }
