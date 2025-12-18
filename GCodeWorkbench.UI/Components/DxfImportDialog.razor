@@ -1,0 +1,186 @@
+@using GCodeWorkbench.UI.Models
+@using System
+
+@if (IsVisible)
+{
+    <div class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center fade-in">
+        <div class="bg-[#1e1e1e] border border-border-dark w-[500px] shadow-2xl rounded-xl flex flex-col scale-in" @onclick:stopPropagation="true">
+            <!-- Header -->
+            <div class="h-12 border-b border-border-dark flex items-center px-4 justify-between bg-surface-dark/50 rounded-t-xl">
+                <span class="font-medium text-text-primary flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-primary"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    DXF Configuration
+                </span>
+                <button class="text-text-dim hover:text-white transition-colors" @onclick="handleCancel">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            
+            <!-- Body -->
+            <div class="p-5 flex flex-col gap-4 max-h-[70vh] overflow-y-auto">
+                
+                <!-- Controller Selection -->
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-text-dim text-xs uppercase tracking-wider font-semibold">Controller Type</label>
+                    <select class="h-9 bg-black/30 border border-border-dark rounded px-2 text-sm focus:border-primary focus:outline-none transition-colors"
+                            @onchange="OnControllerChanged">
+                        <option value="@ControllerType.Pmac" selected="@(Options.Controller == ControllerType.Pmac)">PMAC</option>
+                        <option value="@ControllerType.Beckhoff" selected="@(Options.Controller == ControllerType.Beckhoff)">Beckhoff</option>
+                    </select>
+                </div>
+
+                <!-- Feed Rates (mm/sec) -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-text-dim text-xs uppercase tracking-wider font-semibold">Cutting Feed (mm/s)</label>
+                        <input type="number" step="1" class="h-9 bg-black/30 border border-border-dark rounded px-2 text-sm focus:border-primary focus:outline-none font-mono"
+                               @bind="Options.FeedRate" />
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-text-dim text-xs uppercase tracking-wider font-semibold">Plunge Feed (mm/s)</label>
+                        <input type="number" step="1" class="h-9 bg-black/30 border border-border-dark rounded px-2 text-sm focus:border-primary focus:outline-none font-mono"
+                               @bind="Options.PlungeFeedRate" />
+                    </div>
+                </div>
+                
+                <!-- Coordinate Origin -->
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-text-dim text-xs uppercase tracking-wider font-semibold">Coordinate Origin</label>
+                    <select class="h-9 bg-black/30 border border-border-dark rounded px-2 text-sm focus:border-primary focus:outline-none transition-colors"
+                            @bind="Options.Origin">
+                        <option value="@OriginType.DxfOriginal">Default (DXF 0,0)</option>
+                        <option value="@OriginType.FirstEntityStart">First Entity Start</option>
+                        <option value="@OriginType.BoundingBoxCenter">Bounding Box Center</option>
+                        <option value="@OriginType.BoundingBoxTopLeft">Bounding Box Top-Left</option>
+                    </select>
+                </div>
+
+                <!-- Formatting Toggles -->
+                <div class="grid grid-cols-2 gap-4">
+                     <label class="flex items-center gap-2 cursor-pointer group">
+                        <input type="checkbox" class="w-4 h-4 rounded border-gray-600 bg-black/30 text-primary focus:ring-primary/50" 
+                               @bind="Options.UseLineNumbers">
+                        <span class="text-sm text-text-dim group-hover:text-text-primary transition-colors">Use Line Numbers (N)</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer group">
+                        <input type="checkbox" class="w-4 h-4 rounded border-gray-600 bg-black/30 text-primary focus:ring-primary/50" 
+                               @bind="Options.UseCompactCommands">
+                        <span class="text-sm text-text-dim group-hover:text-text-primary transition-colors">Compact (G1, G0)</span>
+                    </label>
+                </div>
+
+                <!-- Print Triggers -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-text-dim text-xs uppercase tracking-wider font-semibold">Print Start Code</label>
+                        <input type="text" class="h-9 bg-black/30 border border-border-dark rounded px-2 text-sm focus:border-primary focus:outline-none font-mono"
+                               @bind="Options.StartTrigger" placeholder="e.g. M03" />
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-text-dim text-xs uppercase tracking-wider font-semibold">Print Stop Code</label>
+                        <input type="text" class="h-9 bg-black/30 border border-border-dark rounded px-2 text-sm focus:border-primary focus:outline-none font-mono"
+                               @bind="Options.StopTrigger" placeholder="e.g. M05" />
+                    </div>
+                </div>
+
+                <!-- Header Code -->
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-text-dim text-xs uppercase tracking-wider font-semibold flex justify-between">
+                        <span>Header Code</span>
+                        <span class="text-[10px] opacity-60">Executed at start</span>
+                    </label>
+                    <textarea class="h-24 bg-black/30 border border-border-dark rounded p-2 text-sm focus:border-primary focus:outline-none font-mono resize-none"
+                              @bind="Options.HeaderCode"></textarea>
+                </div>
+
+                <!-- Footer Code -->
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-text-dim text-xs uppercase tracking-wider font-semibold flex justify-between">
+                        <span>Footer Code</span>
+                        <span class="text-[10px] opacity-60">Executed at end</span>
+                    </label>
+                    <textarea class="h-20 bg-black/30 border border-border-dark rounded p-2 text-sm focus:border-primary focus:outline-none font-mono resize-none"
+                              @bind="Options.FooterCode"></textarea>
+                </div>
+
+            </div>
+            
+            <!-- Footer -->
+            <div class="p-4 border-t border-border-dark flex justify-end gap-2 bg-surface-dark/30 rounded-b-xl">
+                <button class="h-9 px-4 rounded border border-border-dark hover:bg-white/5 text-text-primary text-sm transition-colors"
+                        @onclick="handleCancel">
+                    Cancel
+                </button>
+                <button class="h-9 px-6 rounded bg-primary hover:bg-primary/90 text-white font-medium text-sm transition-colors shadow-lg shadow-primary/20"
+                        @onclick="handleImport">
+                    Import DXF
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public DxfImportOptions Options { get; set; } = new();
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public EventCallback<DxfImportOptions> OnImport { get; set; }
+
+    private async Task handleCancel()
+    {
+        await OnCancel.InvokeAsync();
+    }
+
+    private async Task handleImport()
+    {
+        Console.WriteLine($"[DxfImportDialog] Import clicked. Selected Origin: {Options.Origin}, Controller: {Options.Controller}");
+        await OnImport.InvokeAsync(Options);
+    }
+    
+    private void OnControllerChanged(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<ControllerType>(e.Value?.ToString(), out var type))
+        {
+            Options.Controller = type;
+            ApplyPresets(type);
+        }
+    }
+    
+    private void ApplyPresets(ControllerType type)
+    {
+        if (type == ControllerType.Pmac)
+        {
+            // PMAC: Native commands (RAPID, LINEAR, ARC1, ARC2)
+            Options.Style = CommandStyle.PmacNative;
+            Options.UseLineNumbers = true; 
+            Options.UseCompactCommands = false; // Not used for PMAC native
+            Options.HeaderCode = $"OPEN PROG 1 CLEAR{Environment.NewLine}LINEAR ABS"; // PMAC program header
+            Options.FooterCode = "CLOSE"; // PMAC program footer
+            Options.StartTrigger = ""; // PMAC may use different triggers
+            Options.StopTrigger = "";
+        }
+        else if (type == ControllerType.Beckhoff)
+        {
+            // Beckhoff: Standard G-code (G00, G01, G02, G03)
+            Options.Style = CommandStyle.GCode;
+            Options.UseLineNumbers = false;
+            Options.UseCompactCommands = false; // G01
+            Options.HeaderCode = $"G21{Environment.NewLine}G90{Environment.NewLine}G64"; // Constant Velocity
+            Options.FooterCode = "M30";
+            Options.StartTrigger = "M03";
+            Options.StopTrigger = "M05";
+        }
+    }
+    
+    protected override void OnParametersSet()
+    {
+        base.OnParametersSet();
+        // Ensure presets are applied when the options object is refreshed/loaded
+        // But only if it's a "fresh" object (we can't easily detect that, 
+        // but applying presets for the Current controller type is safer than leaving defaults).
+        // WARNING: This might overwrite manual changes if parent re-renders?
+        // Actually, main only creates new Options on "Open".
+        // Let's check if we should verify internal state. 
+        // For now, applying presets on open (when Options changes) is correct behavior for a "Reset".
+    }
+}

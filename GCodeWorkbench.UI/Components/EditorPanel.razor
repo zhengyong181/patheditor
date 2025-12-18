@@ -1,0 +1,70 @@
+@using GCodeWorkbench.UI.Models
+
+<section class="flex-1 bg-surface-dark rounded-xl border border-border-dark overflow-hidden flex shadow-sm flex-col z-0 transition-colors duration-200">
+    <!-- Toolbar -->
+    <div class="flex items-center justify-between px-3 py-1.5 border-b border-border-dark bg-[#15281d] text-xs shrink-0">
+        <div class="flex items-center gap-3">
+            <button class="p-0.5 rounded hover:bg-white/10 text-text-dim transition" 
+                    title="@(IsCollapsed ? "Expand Editor Panel" : "Collapse Editor Panel")"
+                    @onclick="() => OnToggleCollapse.InvokeAsync()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                     class="transition-transform @(IsCollapsed ? "rotate-180" : "")">
+                    <path d="m6 9 6 6 6-6"/>
+                </svg>
+            </button>
+            <span class="text-white font-semibold">Raw G-Code</span>
+            <span class="text-text-dim">@(Document?.FileName ?? "No File")</span>
+        </div>
+        <!-- Actions -->
+    </div>
+    
+    <!-- Code Editor -->
+    @if (Document != null)
+    {
+        <div class="flex-1 overflow-auto font-mono text-xs sm:text-sm leading-6">
+            <table class="w-full border-collapse">
+                @foreach (var line in GetVisibleLines())
+                {
+                    <tr class="@(line == SelectedLine ? "bg-primary/10" : "hover:bg-white/5") cursor-pointer"
+                        @onclick="() => OnLineSelected.InvokeAsync(line)">
+                        <td class="w-10 text-right pr-2 select-none border-r border-border-dark text-text-dim/40 text-[11px] sm:text-xs bg-[#122118] sticky left-0 @(line == SelectedLine ? "text-white border-r-2 border-r-primary" : "")">
+                            @line.LineNumber
+                        </td>
+                        <td class="pl-2 whitespace-pre text-white">
+                            @if (line.IsPolyline)
+                            {
+                                <span class="text-purple-300">; Polyline - @line.Label</span>
+                            }
+                            else
+                            {
+                                <span class="@GetCommandColor(line.Command)">@line.RawText</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </table>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter] public GCodeDocument? Document { get; set; }
+    [Parameter] public GCodeLine? SelectedLine { get; set; }
+    [Parameter] public bool IsCollapsed { get; set; }
+    [Parameter] public EventCallback OnToggleCollapse { get; set; }
+    [Parameter] public EventCallback<GCodeLine> OnLineSelected { get; set; }
+    
+    // 简化版渲染，仅显示部分行避免性能问题，实际应同样使用虚拟化
+    private IEnumerable<GCodeLine> GetVisibleLines()
+    {
+        if (Document == null) return Enumerable.Empty<GCodeLine>();
+        return Document.GetFlatLines().Take(100); // 暂时只显示前100行用于演示
+    }
+    
+    private string GetCommandColor(string command)
+    {
+        if (command == "G00") return "text-yellow-300";
+        if (command == "G01") return "text-green-300";
+        return "text-white";
+    }
+}

@@ -1,0 +1,65 @@
+@namespace GCodeWorkbench.UI.Components
+
+@if (IsVisible)
+{
+    <div class="fixed inset-0 z-50" @onclick="Close" @oncontextmenu:preventDefault="true">
+        <div class="absolute bg-surface-dark border border-border-dark shadow-lg rounded-lg py-1 min-w-[160px] text-xs"
+             style="left: @(X)px; top: @(Y)px;"
+             @onclick:stopPropagation="true">
+            
+            @if (ChildContent != null)
+            {
+                @ChildContent
+            }
+            else
+            {
+                @foreach (var item in Items)
+                {
+                    if (item.IsSeparator)
+                    {
+                        <div class="h-px bg-border-dark my-1"></div>
+                    }
+                    else
+                    {
+                        <div class="px-3 py-1.5 hover:bg-white/10 cursor-pointer flex items-center justify-between text-white"
+                             @onclick="() => HandleClick(item)">
+                            <span>@item.Label</span>
+                            @if (!string.IsNullOrEmpty(item.Shortcut))
+                            {
+                                <span class="text-text-dim text-[10px]">@item.Shortcut</span>
+                            }
+                        </div>
+                    }
+                }
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public double X { get; set; }
+    [Parameter] public double Y { get; set; }
+    [Parameter] public List<MenuItem> Items { get; set; } = new();
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    
+    private void Close()
+    {
+        OnClose.InvokeAsync();
+    }
+    
+    private void HandleClick(MenuItem item)
+    {
+        item.Action?.Invoke();
+        Close();
+    }
+    
+    public class MenuItem
+    {
+        public string Label { get; set; } = "";
+        public Action? Action { get; set; }
+        public bool IsSeparator { get; set; }
+        public string Shortcut { get; set; } = "";
+    }
+}

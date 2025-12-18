@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>G-Code Workbench</title>
+    <base href="/" />
+
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Spline+Sans:wght@300;400;500;600;700&amp;display=swap"
+        rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&amp;display=swap"
+        rel="stylesheet" />
+
+    <!-- Tailwind CSS (Dev/Prototyping Mode) -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#36e27b",
+                        "primary-dark": "#2ab561",
+                        "background-light": "#f6f8f7",
+                        "background-dark": "#112117",
+                        "surface-light": "#ffffff",
+                        "surface-dark": "#1b3224",
+                        "border-light": "#e2e8f0",
+                        "border-dark": "#254632",
+                        "text-main-light": "#1e293b",
+                        "text-dim-light": "#64748b",
+                        "text-dim": "#95c6a9"
+                    },
+                    fontFamily: {
+                        "display": ["Spline Sans", "sans-serif"],
+                        "mono": ["Fira Code", "monospace"]
+                    },
+                    borderRadius: { "DEFAULT": "0.25rem", "lg": "0.375rem", "xl": "0.5rem", "full": "9999px" },
+                    backgroundImage: {
+                        'grid-pattern': "linear-gradient(var(--grid-color) 1px, transparent 1px), linear-gradient(90deg, var(--grid-color) 1px, transparent 1px)"
+                    }
+                },
+            },
+        }
+    </script>
+
+    <!-- Custom Styles -->
+    <link href="css/app.css" rel="stylesheet" />
+    <link href="GCodeWorkbench.UI.styles.css" rel="stylesheet" />
+
+    <!-- Splitter Helper JS -->
+    <script>
+        window.splitterHelper = {
+            dotNetRef: null,
+            isVertical: true,
+
+            startDrag: function (dotNetRef, isVertical) {
+                this.dotNetRef = dotNetRef;
+                this.isVertical = isVertical;
+
+                document.addEventListener('mousemove', this.onMouseMove);
+                document.addEventListener('mouseup', this.onMouseUp);
+                document.body.style.cursor = isVertical ? 'col-resize' : 'row-resize';
+                document.body.style.userSelect = 'none';
+            },
+
+            onMouseMove: function (e) {
+                if (window.splitterHelper.dotNetRef) {
+                    var position = window.splitterHelper.isVertical ? e.clientX : e.clientY;
+                    window.splitterHelper.dotNetRef.invokeMethodAsync('OnMouseMove', position);
+                }
+            },
+
+            onMouseUp: function (e) {
+                if (window.splitterHelper.dotNetRef) {
+                    window.splitterHelper.dotNetRef.invokeMethodAsync('OnMouseUp');
+                    window.splitterHelper.dotNetRef = null;
+                }
+                document.removeEventListener('mousemove', window.splitterHelper.onMouseMove);
+                document.removeEventListener('mouseup', window.splitterHelper.onMouseUp);
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+            }
+        };
+    </script>
+</head>
+
+<body class="bg-background-dark text-white font-display overflow-hidden h-screen" style="--grid-color: #254632;">
+    <div id="app">
+        <div
+            style="display:flex;align-items:center;justify-content:center;height:100vh;color:#36e27b;flex-direction:column;gap:1rem;">
+            <svg class="animate-spin" xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"
+                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+            </svg>
+            <span style="font-family: 'Spline Sans', sans-serif;">Loading Workbench...</span>
+        </div>
+    </div>
+    <script src="js/canvasHelper.v2.js?v=2.4"></script>
+    <script src="_framework/blazor.webview.js"></script>
+</body>
+
+</html>

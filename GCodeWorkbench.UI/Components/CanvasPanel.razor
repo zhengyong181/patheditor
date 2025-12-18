@@ -1,0 +1,453 @@
+@namespace GCodeWorkbench.UI.Components
+@using GCodeWorkbench.UI.Models
+@using GCodeWorkbench.UI.Services
+@inject IJSRuntime JS
+@inject SvgRenderService SvgService
+@implements IDisposable
+
+<style>
+    /* Flow animation - moves dash pattern along path */
+    @@keyframes dash-flow {
+        0% { stroke-dashoffset: 0; }
+        100% { stroke-dashoffset: -24; }
+    }
+    
+    /* Feed path flow - cyan/green */
+    .flow-stream {
+        fill: none;
+        stroke: #80ffea;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-dasharray: 6 18;
+        vector-effect: non-scaling-stroke;
+        animation: dash-flow 0.8s linear infinite;
+        pointer-events: none;
+        opacity: 0.8;
+    }
+    
+    /* Rapid path flow - orange/yellow */
+    .flow-stream-rapid {
+        fill: none;
+        stroke: #fcd34d;
+        stroke-width: 1.5;
+        stroke-linecap: round;
+        stroke-dasharray: 4 20;
+        vector-effect: non-scaling-stroke;
+        animation: dash-flow 0.6s linear infinite;
+        pointer-events: none;
+        opacity: 0.6;
+    }
+</style>
+
+<section id="@_canvasId" 
+         class="relative flex-1 basis-3/5 bg-[#0f1b14] rounded-xl border border-border-dark overflow-hidden shadow-sm flex items-center justify-center group/canvas z-0 transition-colors duration-200">
+    
+
+
+    <!-- Zoom Controls - higher z-index to stay above canvas -->
+    <div class="absolute top-4 right-4 flex flex-col gap-2 z-50">
+        <div class="bg-surface-dark/90 backdrop-blur border border-border-dark rounded-lg p-1.5 flex flex-col items-center gap-1 shadow-sm">
+            <button class="size-7 flex items-center justify-center rounded hover:bg-white/10 text-white transition" title="Zoom In" @onclick="ZoomIn">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+            </button>
+            <button class="size-7 flex items-center justify-center rounded hover:bg-white/10 text-white transition" title="Zoom Out" @onclick="ZoomOut">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg>
+            </button>
+            <div class="h-px w-4 bg-border-dark my-0.5"></div>
+            <button class="size-7 flex items-center justify-center rounded hover:bg-white/10 text-white transition" title="Reset View" @onclick="ShowAll">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/></svg>
+            </button>
+        </div>
+        
+        <!-- Axis Indicator -->
+        <div class="bg-surface-dark/50 backdrop-blur rounded-lg p-2 shadow-sm border border-border-dark flex items-center justify-center size-12">
+            <div class="relative size-full">
+                <div class="absolute bottom-1 left-1 w-6 h-0.5 bg-red-500 rounded-full"></div>
+                <div class="absolute bottom-1 left-1 w-0.5 h-6 bg-green-500 rounded-full"></div>
+                <div class="absolute bottom-1 left-1 w-2 h-2 border-2 border-blue-500 rounded-full"></div>
+                <span class="absolute -top-1 -right-0 text-[7px] font-mono text-white">Y</span>
+                <span class="absolute -right-1 bottom-0 text-[7px] font-mono text-white">X</span>
+            </div>
+        </div>
+    </div>
+    
+    
+    
+    <!-- Canvas SVG container -->
+    <div class="canvas-content absolute inset-0 cursor-crosshair">
+        <svg id="@(_canvasId)-svg" class="w-full h-full" 
+             preserveAspectRatio="xMidYMid meet">
+             
+            <!-- Main content group with Y-axis flip -->
+            <g transform="scale(1, -1)">
+                
+                <!-- Selected Line Highlight (Bottom layer - renders first) -->
+                @if (SelectedLineIndex >= 0 && !string.IsNullOrEmpty(_selectedPath))
+                {
+                    <!-- Single Highlight (Performance optimized) -->
+                    <path d="@_selectedPath" 
+                          stroke="#00ffcc" 
+                          stroke-width="10" 
+                          fill="none" 
+                          stroke-linecap="round" 
+                          stroke-linejoin="round" 
+                          opacity="0.65"
+                          vector-effect="non-scaling-stroke"
+                          style="filter: drop-shadow(0 0 3px rgba(0, 255, 204, 0.7));" />
+                }
+                
+                <!-- Rapid Paths (background, not clickable) -->
+                <path d="@_rapidPath" stroke="#eab308" stroke-width="1" stroke-dasharray="4 4" fill="none" opacity="0.4" vector-effect="non-scaling-stroke" class="pointer-events-none" />
+                
+                <!-- Clickable Feed Paths -->
+                @foreach (var segment in _clickablePaths)
+                {
+                    <path d="@segment.Path" 
+                          stroke="@(segment.IsRapid ? "#eab308" : "#36e27b")" 
+                          stroke-width="@(segment.IsRapid ? 1 : 1.5)" 
+                          fill="none" 
+                          opacity="0.7"
+                          stroke-linecap="round" 
+                          stroke-linejoin="round" 
+                          vector-effect="non-scaling-stroke"
+                          style="cursor: pointer;"
+                          @onclick="() => HandlePathClick(segment.FlatIndex)"
+                          @onclick:stopPropagation="true" />
+                }
+
+                <!-- Flowing Direction Light Stream (Top layer) -->
+                @if (!string.IsNullOrEmpty(_feedPath))
+                {
+                    <path d="@_feedPath" class="flow-stream" />
+                }
+                
+                <!-- Rapid Path Flow Stream -->
+                @if (!string.IsNullOrEmpty(_rapidPath))
+                {
+                    <path d="@_rapidPath" class="flow-stream-rapid" />
+                }
+            </g>
+        </svg>
+        
+        <!-- Tool Head (HTML layer, managed by JS) -->
+        <div class="tool-marker absolute pointer-events-none" style="display: none; transform: translate(-50%, -50%);">
+            <div class="w-2 h-2 bg-white rounded-full opacity-90"></div>
+            <div class="absolute inset-0 w-4 h-4 border border-white rounded-full opacity-40" style="transform: translate(-25%, -25%);"></div>
+        </div>
+    </div>
+    
+    <!-- Simulation Controls -->
+    <SimulationControls 
+        CurrentTime="@CurrentTime"
+        TotalTime="@TotalTime"
+        Progress="@SimulationProgress"
+        IsPlaying="@IsPlaying"
+        PlaybackSpeed="@PlaybackSpeed"
+        OnPlay="OnPlay"
+        OnStop="OnStop"
+        OnProgressChanged="OnProgressChanged"
+        OnSpeedChanged="OnSpeedChanged" />
+</section>
+
+@code {
+    [Parameter] public int SelectedLineIndex { get; set; }
+    [Parameter] public GCodeDocument? Document { get; set; }
+    
+    [Parameter] public double SimulationProgress { get; set; }
+    [Parameter] public bool IsPlaying { get; set; }
+    [Parameter] public double PlaybackSpeed { get; set; }
+    [Parameter] public double CurrentTime { get; set; }
+    [Parameter] public double TotalTime { get; set; }
+    [Parameter] public double ToolX { get; set; }
+    [Parameter] public double ToolY { get; set; }
+    [Parameter] public EventCallback OnPlay { get; set; }
+    [Parameter] public EventCallback OnStop { get; set; }
+    [Parameter] public EventCallback<double> OnProgressChanged { get; set; }
+    [Parameter] public EventCallback<double> OnSpeedChanged { get; set; }
+    [Parameter] public EventCallback<int> OnLineIndexSelected { get; set; }
+    [Parameter] public int RefreshKey { get; set; }
+    
+    private string _canvasId = "canvas-" + Guid.NewGuid().ToString("N");
+    private string _rapidPath = "";
+    private string _feedPath = "";
+    private string _selectedPath = "";
+    private List<PathSegment> _clickablePaths = new();
+    private GCodeDocument? _lastDocument;
+    private int _lastSelectedIndex = -1;
+    private int _lastRefreshKey = -1;
+    private DotNetObjectReference<CanvasPanel>? _dotNetRef;
+    
+    // ViewBox state (initial values for JS)
+    private double _vbX = 0, _vbY = 0, _vbW = 100, _vbH = 100;
+    private double _initialVbX, _initialVbY, _initialVbW, _initialVbH;
+    private string _viewBox => $"{_vbX.ToString(System.Globalization.CultureInfo.InvariantCulture)} {_vbY.ToString(System.Globalization.CultureInfo.InvariantCulture)} {_vbW.ToString(System.Globalization.CultureInfo.InvariantCulture)} {_vbH.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+
+    protected override void OnParametersSet()
+    {
+        // Regenerate paths when Document changes OR RefreshKey changes (content modified)
+        bool needsRefresh = Document != null && 
+            (Document != _lastDocument || RefreshKey != _lastRefreshKey || string.IsNullOrEmpty(_feedPath));
+        
+        if (needsRefresh)
+        {
+            _lastDocument = Document;
+            _lastRefreshKey = RefreshKey;
+            var paths = SvgService.GeneratePaths(Document);
+            _rapidPath = paths.RapidPath;
+            _feedPath = paths.FeedPath;
+            
+            // Generate clickable path segments
+            _clickablePaths = SvgService.GenerateClickablePaths(Document);
+            
+            // Calculate ViewBox
+            var bounds = Document.GetBoundingBox();
+            double width = bounds.MaxX - bounds.MinX;
+            double height = bounds.MaxY - bounds.MinY;
+            if (width <= 0) width = 100;
+            if (height <= 0) height = 100;
+            
+            _vbX = bounds.MinX;
+            _vbY = -bounds.MaxY;
+            _vbW = width;
+            _vbH = height;
+            
+            // Save initial values for reset
+            _initialVbX = _vbX;
+            _initialVbY = _vbY;
+            _initialVbW = _vbW;
+            _initialVbH = _vbH;
+        }
+        
+        // Generate selected path highlight
+        if (SelectedLineIndex != _lastSelectedIndex)
+        {
+            _lastSelectedIndex = SelectedLineIndex;
+            _selectedPath = GenerateSelectedPath();
+        }
+    }
+    
+    private string GenerateSelectedPath()
+    {
+        if (Document == null || SelectedLineIndex < 0) return "";
+        
+        var lines = Document.GetFlatLines();
+        if (SelectedLineIndex >= lines.Count) return "";
+        
+        var line = lines[SelectedLineIndex];
+        
+        // 如果是多段线父行，生成所有子行的路径
+        if (line.IsPolyline && line.Children.Count > 0)
+        {
+            return GeneratePolylinePath(line, lines, SelectedLineIndex);
+        }
+        
+        // 单行高亮
+        return GenerateSingleLinePath(line, lines, SelectedLineIndex);
+    }
+    
+    private string GeneratePolylinePath(GCodeLine polyline, List<GCodeLine> flatLines, int polylineIndex)
+    {
+        var sb = new System.Text.StringBuilder();
+        
+        // 找到多段线的起点
+        double curX = polyline.X ?? 0;
+        double curY = polyline.Y ?? 0;
+        
+        // 在 flatLines 中找到此多段线之前的位置来确定起点
+        for (int i = 0; i < polylineIndex && i < flatLines.Count; i++)
+        {
+            var prev = flatLines[i];
+            if (prev.X.HasValue) curX = prev.X.Value;
+            if (prev.Y.HasValue) curY = prev.Y.Value;
+        }
+        
+        // 从多段线父行的坐标开始（如果有）
+        if (polyline.X.HasValue) curX = polyline.X.Value;
+        if (polyline.Y.HasValue) curY = polyline.Y.Value;
+        
+        sb.Append($"M{curX.ToString(System.Globalization.CultureInfo.InvariantCulture)},{curY.ToString(System.Globalization.CultureInfo.InvariantCulture)} ");
+        
+        // 遍历所有子行生成路径
+        foreach (var child in polyline.Children)
+        {
+            double nextX = child.X ?? curX;
+            double nextY = child.Y ?? curY;
+            
+            if (child.Type == GCodeType.ArcCW || child.Type == GCodeType.ArcCCW)
+            {
+                double i = child.I ?? 0;
+                double j = child.J ?? 0;
+                double r = Math.Sqrt(i * i + j * j);
+                
+                if (r > 0.001)
+                {
+                    int sweepFlag = (child.Type == GCodeType.ArcCCW) ? 1 : 0;
+                    double cx = curX + i;
+                    double cy = curY + j;
+                    double startAngle = Math.Atan2(curY - cy, curX - cx);
+                    double endAngle = Math.Atan2(nextY - cy, nextX - cx);
+                    double angleDiff = endAngle - startAngle;
+                    
+                    if (sweepFlag == 1) while (angleDiff <= 0) angleDiff += 2 * Math.PI;
+                    else while (angleDiff >= 0) angleDiff -= 2 * Math.PI;
+                    
+                    int largeArcFlag = Math.Abs(angleDiff) > Math.PI ? 1 : 0;
+                    
+                    bool isFullCircle = Math.Abs(curX - nextX) < 0.001 && Math.Abs(curY - nextY) < 0.001;
+                    if (isFullCircle)
+                    {
+                        double midX = cx - (curX - cx);
+                        double midY = cy - (curY - cy);
+                        sb.Append($"A{r.ToString(System.Globalization.CultureInfo.InvariantCulture)},{r.ToString(System.Globalization.CultureInfo.InvariantCulture)} 0 1 {sweepFlag} {midX.ToString(System.Globalization.CultureInfo.InvariantCulture)},{midY.ToString(System.Globalization.CultureInfo.InvariantCulture)} ");
+                        sb.Append($"A{r.ToString(System.Globalization.CultureInfo.InvariantCulture)},{r.ToString(System.Globalization.CultureInfo.InvariantCulture)} 0 1 {sweepFlag} {nextX.ToString(System.Globalization.CultureInfo.InvariantCulture)},{nextY.ToString(System.Globalization.CultureInfo.InvariantCulture)} ");
+                    }
+                    else
+                    {
+                        sb.Append($"A{r.ToString(System.Globalization.CultureInfo.InvariantCulture)},{r.ToString(System.Globalization.CultureInfo.InvariantCulture)} 0 {largeArcFlag} {sweepFlag} {nextX.ToString(System.Globalization.CultureInfo.InvariantCulture)},{nextY.ToString(System.Globalization.CultureInfo.InvariantCulture)} ");
+                    }
+                }
+                else
+                {
+                    sb.Append($"L{nextX.ToString(System.Globalization.CultureInfo.InvariantCulture)},{nextY.ToString(System.Globalization.CultureInfo.InvariantCulture)} ");
+                }
+            }
+            else
+            {
+                sb.Append($"L{nextX.ToString(System.Globalization.CultureInfo.InvariantCulture)},{nextY.ToString(System.Globalization.CultureInfo.InvariantCulture)} ");
+            }
+            
+            curX = nextX;
+            curY = nextY;
+        }
+        
+        return sb.ToString();
+    }
+    
+    private string GenerateSingleLinePath(GCodeLine line, List<GCodeLine> flatLines, int lineIndex)
+    {
+        if (!line.X.HasValue && !line.Y.HasValue) return "";
+        
+        // Find previous point
+        double prevX = 0, prevY = 0;
+        for (int i = 0; i < lineIndex && i < flatLines.Count; i++)
+        {
+            var prev = flatLines[i];
+            if (prev.X.HasValue) prevX = prev.X.Value;
+            if (prev.Y.HasValue) prevY = prev.Y.Value;
+        }
+        
+        double curX = line.X ?? prevX;
+        double curY = line.Y ?? prevY;
+        
+        if (line.Type == GCodeType.ArcCW || line.Type == GCodeType.ArcCCW)
+        {
+            double iVal = line.I ?? 0;
+            double jVal = line.J ?? 0;
+            double centerX = prevX + iVal;
+            double centerY = prevY + jVal;
+            double radius = Math.Sqrt(iVal * iVal + jVal * jVal);
+            
+            if (radius < 0.001) 
+                return $"M{prevX.ToString(System.Globalization.CultureInfo.InvariantCulture)} {prevY.ToString(System.Globalization.CultureInfo.InvariantCulture)} L{curX.ToString(System.Globalization.CultureInfo.InvariantCulture)} {curY.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+            
+            bool isCCW = (line.Type == GCodeType.ArcCCW);
+            int sweepFlag = isCCW ? 1 : 0;
+            
+            double startAngle = Math.Atan2(prevY - centerY, prevX - centerX);
+            double endAngle = Math.Atan2(curY - centerY, curX - centerX);
+            double diff = endAngle - startAngle;
+            
+            if (isCCW) while (diff <= 0) diff += 2 * Math.PI;
+            else while (diff >= 0) diff -= 2 * Math.PI;
+            
+            int largeArcFlag = Math.Abs(diff) > Math.PI ? 1 : 0;
+            
+            // 完整圆检测
+            bool isFullCircle = Math.Abs(prevX - curX) < 0.001 && Math.Abs(prevY - curY) < 0.001;
+            if (isFullCircle)
+            {
+                double midX = centerX - (prevX - centerX);
+                double midY = centerY - (prevY - centerY);
+                return $"M{prevX.ToString(System.Globalization.CultureInfo.InvariantCulture)} {prevY.ToString(System.Globalization.CultureInfo.InvariantCulture)} A{radius.ToString(System.Globalization.CultureInfo.InvariantCulture)} {radius.ToString(System.Globalization.CultureInfo.InvariantCulture)} 0 1 {sweepFlag} {midX.ToString(System.Globalization.CultureInfo.InvariantCulture)} {midY.ToString(System.Globalization.CultureInfo.InvariantCulture)} A{radius.ToString(System.Globalization.CultureInfo.InvariantCulture)} {radius.ToString(System.Globalization.CultureInfo.InvariantCulture)} 0 1 {sweepFlag} {curX.ToString(System.Globalization.CultureInfo.InvariantCulture)} {curY.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+            }
+            
+            return $"M{prevX.ToString(System.Globalization.CultureInfo.InvariantCulture)} {prevY.ToString(System.Globalization.CultureInfo.InvariantCulture)} A{radius.ToString(System.Globalization.CultureInfo.InvariantCulture)} {radius.ToString(System.Globalization.CultureInfo.InvariantCulture)} 0 {largeArcFlag} {sweepFlag} {curX.ToString(System.Globalization.CultureInfo.InvariantCulture)} {curY.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+        }
+        
+        return $"M{prevX.ToString(System.Globalization.CultureInfo.InvariantCulture)} {prevY.ToString(System.Globalization.CultureInfo.InvariantCulture)} L{curX.ToString(System.Globalization.CultureInfo.InvariantCulture)} {curY.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+    }
+    
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                // 初始化 JS pan/zoom，传入初始 viewBox
+                await JS.InvokeVoidAsync("canvasHelper.init", _canvasId, null, _viewBox);
+                _jsViewBoxUpdated = true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error initializing canvas: {ex.Message}");
+            }
+        }
+        
+        // 更新刀头位置（由 JS 管理屏幕坐标，包括视图变化时的更新）
+        try
+        {
+            bool visible = IsPlaying || SimulationProgress > 0;
+            await JS.InvokeVoidAsync("canvasHelper.setToolPosition", _canvasId, ToolX, ToolY, visible);
+        }
+        catch { }
+    }
+    
+    private bool _jsViewBoxUpdated = false;
+    private GCodeDocument? _lastDocForViewBox;
+    
+    protected override async Task OnParametersSetAsync()
+    {
+        // 当 Document 变化时，自动适应视图（导入后自动 fit to view）
+        if (Document != null && Document != _lastDocForViewBox)
+        {
+            _lastDocForViewBox = Document;
+            
+            if (_jsViewBoxUpdated)
+            {
+                try
+                {
+                    // 设置新的 viewBox 并重置视图
+                    await JS.InvokeVoidAsync("canvasHelper.setViewBox", _canvasId, _vbX, _vbY, _vbW, _vbH);
+                }
+                catch { }
+            }
+        }
+    }
+    
+    private async Task ZoomIn()
+    {
+        try { await JS.InvokeVoidAsync("canvasHelper.zoom", _canvasId, 0.8); } catch { }
+    }
+    
+    private async Task ZoomOut()
+    {
+        try { await JS.InvokeVoidAsync("canvasHelper.zoom", _canvasId, 1.25); } catch { }
+    }
+    
+    private async Task ShowAll()
+    {
+        try { await JS.InvokeVoidAsync("canvasHelper.reset", _canvasId); } catch { }
+    }
+    
+    private async Task HandlePathClick(int flatIndex)
+    {
+        await OnLineIndexSelected.InvokeAsync(flatIndex);
+    }
+    
+    public void Dispose()
+    {
+        _dotNetRef?.Dispose();
+    }
+}
+
+

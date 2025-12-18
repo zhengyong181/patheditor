@@ -1,0 +1,410 @@
+@using GCodeWorkbench.UI.Models
+@using GCodeWorkbench.UI.Services
+@using GCodeWorkbench.UI.Commands
+@inject IJSRuntime JS
+
+<aside class="flex flex-col w-full h-full bg-surface-dark rounded-xl border border-border-dark overflow-hidden shadow-sm z-10"
+       style="--col-line: @(_colLineWidth)px; --col-instruction: @(_colInstructionWidth)px; --col-label: 1fr; cursor: @(_resizingColumn != -1 ? "col-resize" : "default")"
+       @onmousemove="HandleColumnResize"
+       @onmouseup="StopResizing"
+       @onmouseleave="StopResizing">
+    <!-- Search Bar -->
+    <div class="p-2 border-b border-border-dark bg-[#15281d] shrink-0">
+        <label class="flex flex-col w-full">
+            <div class="flex w-full items-stretch rounded h-9 bg-[#254632]/50 border border-border-dark focus-within:border-primary/50 transition-colors">
+                <div class="text-text-dim flex items-center justify-center pl-3 pr-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="m21 21-4.3-4.3"/>
+                    </svg>
+                </div>
+                <input class="flex w-full min-w-0 flex-1 bg-transparent text-white focus:outline-none placeholder:text-text-dim/50 text-xs font-normal" 
+                       placeholder="Filter line number or command..." 
+                       @bind="_filterText" />
+            </div>
+        </label>
+    </div>
+    
+    <!-- Scrollable container for header + content (horizontal scroll synced) -->
+    <div class="flex-1 flex flex-col overflow-x-auto overflow-y-hidden min-w-0">
+        <!-- Column Headers with Resizers (sticky top) -->
+        <div class="grid gap-0 px-1 py-2 bg-[#1b3224] border-b border-border-dark text-[10px] font-semibold text-text-dim uppercase tracking-wider shrink-0 select-none sticky top-0 z-10"
+             style="grid-template-columns: var(--col-line) var(--col-instruction) var(--col-label); min-width: max-content;">
+            
+            <!-- Line Header -->
+            <div class="flex items-center justify-center relative">
+                <span>Line</span>
+                <div class="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize flex justify-end group/resizer"
+                     @onmousedown="(e) => StartResizing(e, 0)"
+                     @onmousedown:stopPropagation="true">
+                    <div class="w-0.5 h-full bg-border-dark/50 group-hover/resizer:bg-primary transition-colors"></div>
+                </div>
+            </div>
+            
+            <!-- Instruction Header -->
+            <div class="flex items-center justify-center relative">
+                <span>Instruction</span>
+                <div class="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize flex justify-end group/resizer"
+                     @onmousedown="(e) => StartResizing(e, 1)"
+                     @onmousedown:stopPropagation="true">
+                    <div class="w-0.5 h-full bg-border-dark/50 group-hover/resizer:bg-primary transition-colors"></div>
+                </div>
+            </div>
+            
+            <!-- Label Header -->
+            <div class="flex items-center justify-center">
+                <span>Label</span>
+            </div>
+        </div>
+        
+        <!-- Code List -->
+        <!-- Added overflow-x-hidden to prevent inner horizontal scrollbar -->
+        <div class="flex-1 overflow-y-auto overflow-x-hidden relative bg-transparent">
+            <div class="flex flex-col" style="min-width: max-content;">
+            @if (Document != null)
+            {
+                <Virtualize Items="@Document.GetVisibleLines().ToList()" Context="item" OverscanCount="20" ItemSize="35">
+                    @{
+                        var line = item.Line;
+                        var index = item.FlatIndex;
+                    }
+                    <div class="group code-row grid gap-0 px-1 @(line.Parent != null ? "py-1.5" : "py-2") border-b border-border-dark/50 items-center @GetRowClass(line) cursor-pointer transition-colors text-xs @(line.Parent != null ? "relative" : "") @(line == _draggedLine ? "opacity-50" : "")"
+                          style="grid-template-columns: var(--col-line) var(--col-instruction) var(--col-label);"
+                          draggable="true"
+                          @ondragstart="(e) => HandleDragStart(e, line)"
+                          @ondragenter:preventDefault="true"
+                          @ondragover="HandleDragOver"
+                          @ondragover:preventDefault="true"
+                          @ondrop="(e) => HandleDrop(e, line)"
+                          @ondragend="HandleDragEnd"
+                          @onclick="() => HandleRowClick(line)"
+                          @oncontextmenu:preventDefault="true"
+                          @oncontextmenu="(e) => ShowContextMenu(e, line)"
+                          @key="line.LineNumber"
+                          data-line-number="@line.LineNumber">
+                         
+                         <!-- Line Number -->
+                         <div class="@(line == SelectedLine ? "text-white font-bold" : (line.Parent != null ? "text-text-dim/40 text-[10px] pl-1" : "text-text-dim")) font-mono flex justify-center">
+                             @line.LineNumber.ToString("D3")
+                         </div>
+                         
+                         <!-- Instruction -->
+                         <div class="@(line == SelectedLine ? "text-white" : "text-white") font-mono flex justify-center @(line.IsPolyline ? "items-center gap-1 select-none" : "flex-wrap gap-x-2 items-center") @(line.Parent != null ? "pl-4 border-l-2 border-border-dark/30 ml-1" : "")">
+                             @if (line.IsPolyline)
+                             {
+                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" 
+                                      class="text-slate-400 transition-transform group-hover:text-primary @(line.IsCollapsed ? "" : "rotate-90")"
+                                      @onclick:stopPropagation="true"
+                                      @onclick="() => ToggleCollapse(line)">
+                                     <path d="m9 18 6-6-6-6"/>
+                                 </svg>
+                                 <span class="font-bold text-slate-300">@line.DisplayCommand</span>
+                                 <span class="text-text-dim text-[10px] italic">
+                                     @line.Label
+                                 </span>
+                             }
+                             else
+                             {
+                                 <span class="font-bold @GetCommandColor(line.Command) mr-1">@line.DisplayCommand</span>
+                                 
+                                 <div class="flex flex-wrap gap-1 items-center justify-center" @onclick:stopPropagation="true">
+                                     @if(line.X.HasValue) { <ParameterPill Label="X" Value="@line.X" ValueChanged="@(v => UpdateParamWithCommand(line, l => l.X, (l, val) => l.X = val, v, "X"))" ColorClass="text-red-400" /> }
+                                     @if(line.Y.HasValue) { <ParameterPill Label="Y" Value="@line.Y" ValueChanged="@(v => UpdateParamWithCommand(line, l => l.Y, (l, val) => l.Y = val, v, "Y"))" ColorClass="text-green-400" /> }
+                                     @if(line.Z.HasValue) { <ParameterPill Label="Z" Value="@line.Z" ValueChanged="@(v => UpdateParamWithCommand(line, l => l.Z, (l, val) => l.Z = val, v, "Z"))" ColorClass="text-blue-400" /> }
+                                     @if(line.F.HasValue) { <ParameterPill Label="F" Value="@line.F" ValueChanged="@(v => UpdateParamWithCommand(line, l => l.F, (l, val) => l.F = val, v, "F"))" ColorClass="text-orange-400" /> }
+                                     @if(line.S.HasValue) { <ParameterPill Label="S" Value="@line.S" ValueChanged="@(v => UpdateParamWithCommand(line, l => l.S, (l, val) => l.S = val, v, "S"))" ColorClass="text-purple-400" /> }
+                                 </div>
+                             }
+                         </div>
+                         
+                         <!-- Label -->
+                         <div class="@(line == SelectedLine ? "text-white font-medium" : (line.Parent != null ? "text-text-dim/70 pl-2" : "text-text-dim")) text-[10px] truncate flex justify-center gap-1">
+                             @foreach(var tag in line.Tags)
+                             {
+                                 <span class="px-1.5 py-0.5 bg-white/10 rounded text-[9px] border border-white/5">@tag</span>
+                             }
+                         </div>
+                     </div>
+            </Virtualize>
+            }
+        </div>
+    </div>
+    </div>
+    
+    <ContextMenu IsVisible="@_contextMenuVisible" X="@_contextMenuX" Y="@_contextMenuY" OnClose="HideContextMenu">
+        <div class="px-3 py-2 border-b border-border-dark mb-1">
+            <input class="w-full bg-black/30 border border-border-dark rounded px-2 py-1 text-xs text-white placeholder:text-text-dim/50 focus:border-primary outline-none"
+                   placeholder="Add Label..."
+                   @bind="_newTagText"
+                   @onclick:stopPropagation="true"
+                   @onkeydown="HandleTagInputKey" />
+        </div>
+        @foreach(var item in _contextMenuItems)
+        {
+             <div class="px-3 py-1.5 hover:bg-white/10 cursor-pointer flex items-center justify-between text-white"
+                  @onclick="() => ExecuteMenuAction(item)">
+                <span>@item.Label</span>
+            </div>
+        }
+    </ContextMenu>
+</aside>
+
+@code {
+    [Parameter] public GCodeDocument? Document { get; set; }
+    [Parameter] public GCodeLine? SelectedLine { get; set; }
+    [Parameter] public EventCallback<GCodeLine> OnLineSelected { get; set; }
+    [Parameter] public EventCallback OnStateChanged { get; set; }
+    [Parameter] public CommandManager? CommandManager { get; set; }
+    
+    private string _filterText = "";
+    private GCodeLine? _lastSelectedLine;
+    
+    // Column Width State
+    private int _colLineWidth = 45;
+    private int _colInstructionWidth = 200; // Default width
+    private int _resizingColumn = -1;
+    private double _resizeStartX;
+    private int _resizeStartWidth;
+    private int _resizeNeighborStartWidth;
+    
+    // Context Menu State
+    private bool _contextMenuVisible;
+    private double _contextMenuX;
+    private double _contextMenuY;
+    private GCodeLine? _contextLine;
+    private string _newTagText = "";
+    private List<ContextMenu.MenuItem> _contextMenuItems = new();
+
+    private GCodeLine? _draggedLine;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // 当选中行变化时，自动滚动到该行
+        if (SelectedLine != null && SelectedLine != _lastSelectedLine)
+        {
+            _lastSelectedLine = SelectedLine;
+            try
+            {
+                // 滚动到选中行
+                await JS.InvokeVoidAsync("canvasHelper.scrollToElement", 
+                    "aside .overflow-y-auto", 
+                    $"[data-line-number='{SelectedLine.LineNumber}']");
+            }
+            catch { }
+        }
+    }
+
+    private void StartResizing(MouseEventArgs e, int columnIndex)
+    {
+        _resizingColumn = columnIndex;
+        _resizeStartX = e.ClientX;
+        
+        switch (columnIndex)
+        {
+            case 0: // Line | Instruction
+                _resizeStartWidth = _colLineWidth; 
+                _resizeNeighborStartWidth = _colInstructionWidth;
+                break;
+            case 1: // Instruction (Label auto-fills)
+                _resizeStartWidth = _colInstructionWidth; 
+                break;
+        }
+    }
+    
+    private void HandleColumnResize(MouseEventArgs e)
+    {
+        if (_resizingColumn == -1) return;
+        
+        int delta = (int)(e.ClientX - _resizeStartX);
+        
+        // 最小宽度定义
+        const int MinLineWidth = 40;
+        const int MinInstructionWidth = 100; // 确保 "INSTRUCTION" 标题完整显示
+        
+        switch (_resizingColumn)
+        {
+            case 0: // Line | Instruction
+                int newLineWidth = _resizeStartWidth + delta;
+                int newInstructionWidth = _resizeNeighborStartWidth - delta;
+                
+                // 约束 Line 最小宽度
+                if (newLineWidth < MinLineWidth)
+                {
+                    newLineWidth = MinLineWidth;
+                    newInstructionWidth = _resizeNeighborStartWidth - (MinLineWidth - _resizeStartWidth);
+                }
+                
+                // 约束 Instruction 最小宽度（联动约束）
+                if (newInstructionWidth < MinInstructionWidth)
+                {
+                    newInstructionWidth = MinInstructionWidth;
+                    newLineWidth = _resizeStartWidth + (_resizeNeighborStartWidth - MinInstructionWidth);
+                }
+                
+                _colLineWidth = newLineWidth;
+                _colInstructionWidth = newInstructionWidth;
+                break;
+                
+            case 1: // Instruction | Label
+                _colInstructionWidth = Math.Max(MinInstructionWidth, _resizeStartWidth + delta);
+                break;
+        }
+        
+        // Force re-render for smooth resizing
+        StateHasChanged();
+    }
+    
+    private void StopResizing()
+    {
+        _resizingColumn = -1;
+    }
+
+    private void HandleDragStart(DragEventArgs e, GCodeLine line)
+    {
+        _draggedLine = line;
+        e.DataTransfer.EffectAllowed = "move";
+    }
+    
+    private void HandleDragOver(DragEventArgs e)
+    {
+        e.DataTransfer.DropEffect = "move";
+    }
+    
+    private void HandleDrop(DragEventArgs e, GCodeLine targetLine)
+    {
+        if (_draggedLine == null || _draggedLine == targetLine || Document == null) return;
+        
+        // Limit: Only same parent
+        if (_draggedLine.Parent != targetLine.Parent) return;
+        
+        var list = _draggedLine.Parent?.Children ?? Document.Lines;
+        
+        var oldIndex = list.IndexOf(_draggedLine);
+        var newIndex = list.IndexOf(targetLine);
+        
+        if (oldIndex >= 0 && newIndex >= 0)
+        {
+            // Use Command Pattern for Undo support
+            var moveCmd = new MoveItemCommand<GCodeLine>(list, oldIndex, newIndex);
+            CommandManager?.Execute(moveCmd);
+            
+            OnStateChanged.InvokeAsync();
+        }
+        
+        _draggedLine = null;
+    }
+    
+    private void HandleDragEnd(DragEventArgs e)
+    {
+        _draggedLine = null;
+    }
+
+    private void HandleRowClick(GCodeLine line)
+    {
+        OnLineSelected.InvokeAsync(line);
+    }
+    
+    private void ShowContextMenu(MouseEventArgs e, GCodeLine line)
+    {
+        _contextLine = line;
+        _contextMenuX = e.ClientX;
+        _contextMenuY = e.ClientY;
+        _contextMenuVisible = true;
+        _newTagText = "";
+        
+        // Build Menu
+        _contextMenuItems = new List<ContextMenu.MenuItem>
+        {
+            new() { Label = "Toggle 'Finish'", Action = () => ToggleTag("Finish") },
+            new() { Label = "Toggle 'Roughing'", Action = () => ToggleTag("Roughing") },
+            new() { Label = "Clear Tags", Action = () => { line.Tags.Clear(); line.Label = ""; } }
+        };
+    }
+    
+    private void HideContextMenu()
+    {
+        _contextMenuVisible = false;
+    }
+    
+    private void ExecuteMenuAction(ContextMenu.MenuItem item)
+    {
+        item.Action?.Invoke();
+        OnStateChanged.InvokeAsync();
+        HideContextMenu();
+    }
+    
+    private void ToggleTag(string tag)
+    {
+        if (_contextLine == null) return;
+        if (_contextLine.Tags.Contains(tag)) 
+            _contextLine.Tags.Remove(tag);
+        else 
+            _contextLine.Tags.Add(tag);
+        
+        // Also update Label for visibility
+        if (_contextLine.Tags.Any())
+            _contextLine.Label = string.Join(", ", _contextLine.Tags);
+        else 
+            _contextLine.Label = "";
+    }
+    
+    private void HandleTagInputKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_newTagText) && _contextLine != null)
+        {
+            ToggleTag(_newTagText);
+            _newTagText = "";
+            OnStateChanged.InvokeAsync();
+            HideContextMenu();
+        }
+    }
+    
+    private void ToggleCollapse(GCodeLine line)
+    {
+        line.IsCollapsed = !line.IsCollapsed;
+        OnStateChanged.InvokeAsync();
+    }
+    
+    private string GetRowClass(GCodeLine line)
+    {
+        if (line == SelectedLine)
+            return "bg-primary/10 border-l-2 border-l-primary";
+        return "hover:bg-white/5";
+    }
+    
+    private string GetCommandColor(string command)
+    {
+        if (command == "G00") return "text-yellow-300";
+        if (command == "G01") return "text-green-300";
+        return "text-white";
+    }
+    
+    private void UpdateParamWithCommand<T>(GCodeLine line, Func<GCodeLine, T> getter, Action<GCodeLine, T> setter, T newValue, string paramName)
+    {
+        var oldValue = getter(line);
+        
+        var cmd = new SetPropertyCommand<T>(
+            v => { setter(line, v); line.RawText = null; },
+            oldValue,
+            newValue,
+            $"Set {paramName}: {oldValue} → {newValue}"
+        );
+        
+        CommandManager?.Execute(cmd);
+        OnStateChanged.InvokeAsync();
+    }
+    
+    private void UpdateParam(GCodeLine line, Action<GCodeLine> updateAction)
+    {
+        // Fallback for simple updates without command recording
+        updateAction(line);
+        line.RawText = null; 
+        OnStateChanged.InvokeAsync(); 
+    }
+    
+    private string GetTypeBadgeClass(GCodeLine line)
+    {
+        var baseClass = "px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase flex items-center gap-1";
+        return $"{baseClass} bg-slate-700 text-slate-200 border border-slate-600";
+    }
+}

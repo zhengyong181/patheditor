@@ -1,0 +1,338 @@
+@using GCodeWorkbench.UI.Models
+@using GCodeWorkbench.UI.Services
+
+@inject IProjectService ProjectService
+
+<div class="h-screen flex flex-col selection:bg-primary/30 transition-colors duration-200 @(_isDarkMode ? "" : "light-mode")">
+    <!-- Header -->
+    <Header OnToggleTheme="ToggleTheme" IsDarkMode="@_isDarkMode" 
+            CanUndo="@_cmdManager.CanUndo" CanRedo="@_cmdManager.CanRedo"
+            OnUndo="HandleUndo" OnRedo="HandleRedo"
+            OnOpenProject="HandleOpenProject"
+            OnImportGCode="HandleImportGCode"
+            OnImportDxf="HandleImportDxf"
+            OnSaveProject="HandleSaveProject"
+            OnExportGCode="HandleExportGCode" />
+    
+    <!-- Main Content -->
+    <div class="flex flex-1 overflow-hidden p-2 gap-0">
+        <!-- Left Panel: Code List -->
+        <div style="width: @(_leftPanelWidth)px; min-width: 250px; max-width: 600px;" class="shrink-0 flex flex-col">
+            <CodeListPanel 
+                Document="@_document" 
+                SelectedLine="@_document?.SelectedLine" 
+                OnLineSelected="HandleLineSelected"
+                OnStateChanged="HandleContentChanged"
+                CommandManager="@_cmdManager" />
+        </div>
+        
+        <!-- Vertical Splitter -->
+        <Splitter IsVertical="true" OnResize="HandleLeftSplitterResize" />
+        
+        <!-- Main Area -->
+        <main class="flex flex-col flex-1 gap-0 h-full min-w-0">
+            <!-- Canvas Panel -->
+            <div style="flex: @(_editorCollapsed ? "1" : _canvasFlexBasis);" class="min-h-[200px] flex flex-col">
+                <CanvasPanel 
+                    Document="@_document"
+                    SelectedLineIndex="@(_document?.SelectedIndex ?? -1)"
+                    RefreshKey="@_canvasRefreshKey"
+                    SimulationProgress="@_simulationProgress"
+                    IsPlaying="@_isPlaying"
+                    PlaybackSpeed="@_playbackSpeed"
+                    CurrentTime="@_currentTime"
+                    TotalTime="@_totalTime"
+                    ToolX="@_toolX"
+                    ToolY="@_toolY"
+                    OnPlay="HandlePlay"
+                    OnStop="HandleStop"
+                    OnProgressChanged="HandleProgressChanged"
+                    OnSpeedChanged="HandleSpeedChanged"
+                    OnLineIndexSelected="HandleLineIndexSelected" />
+            </div>
+            
+            @if (!_editorCollapsed)
+            {
+                <!-- Horizontal Splitter -->
+                <Splitter IsVertical="false" OnResize="HandleBottomSplitterResize" />
+                
+                <!-- Editor Panel -->
+                <div style="flex: @_editorFlexBasis;" class="min-h-[100px] flex flex-col">
+                    <EditorPanel 
+                        Document="@_document" 
+                        SelectedLine="@_document?.SelectedLine"
+                        IsCollapsed="@_editorCollapsed"
+                        OnLineSelected="HandleLineSelected"
+                        OnToggleCollapse="ToggleEditorCollapse" />
+                </div>
+            }
+            else
+            {
+                <!-- Collapsed Editor Bar -->
+                <div class="h-8 bg-surface-dark rounded-xl border border-border-dark flex items-center px-3 cursor-pointer hover:bg-white/5 transition-colors"
+                     @onclick="ToggleEditorCollapse">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-text-dim mr-2">
+                        <path d="m18 15-6-6-6 6"/>
+                    </svg>
+                    <span class="text-xs text-text-dim">Raw G-Code</span>
+                    <span class="text-xs text-text-dim/50 ml-2">@(_document?.FileName ?? "No File")</span>
+                </div>
+            }
+        </main>
+    </div>
+
+
+    <!-- DXF Import Configuration Dialog -->
+    <DxfImportDialog 
+        IsVisible="@_showDxfDialog" 
+        Options="@_dxfOptions"
+        OnCancel="HandleDxfImportCancel"
+        OnImport="HandleDxfImportConfirm" />
+</div>
+
+@code {
+    private bool _isDarkMode = true;
+    private GCodeDocument? _document;
+    
+    // Simulation state
+    private double _simulationProgress = 0;
+    private bool _isPlaying = false;
+    private double _playbackSpeed = 1.0;
+    private double _currentTime = 0;
+    private double _totalTime = 0;
+    
+    // Panel sizing
+    private double _leftPanelWidth = 380;
+    private string _canvasFlexBasis = "3";
+    private string _editorFlexBasis = "2";
+    private double _canvasRatio = 0.6;
+    private bool _editorCollapsed = false;
+    
+    // Services
+    private GCodeParser _parser = new();
+    private DxfParserService _dxfParser = new(); // Instantiated directly as it's a logic service
+    private SimulationService _simService = new();
+    private CommandManager _cmdManager = new(200);
+    private System.Threading.Timer? _simTimer;
+    
+    // DXF Import State
+    private bool _showDxfDialog = false;
+    private DxfImportOptions _dxfOptions = new();
+    private string? _pendingDxfPath;
+    
+    // Sim State
+    private double _toolX;
+    private double _toolY;
+    
+    // Canvas refresh key (incremented to force refresh)
+    private int _canvasRefreshKey = 0;
+    
+    protected override void OnInitialized()
+    {
+        _simService.OnStateChanged += OnSimStateChanged;
+        _cmdManager.OnStateChanged += () => InvokeAsync(StateHasChanged);
+        
+        // 60FPS loop
+        _simTimer = new System.Threading.Timer(OnSimTick, null, 16, 16);
+
+        // 初始化空文档
+        InitializeEmptyDocument();
+    }
+    
+    // ... REST OF FILE ...
+    
+    private void OnSimTick(object? state)
+    {
+        // run on thread pool, safe for service tick but update UI on UI thread
+        _simService.Tick(TimeSpan.FromMilliseconds(16));
+    }
+    
+    private void OnSimStateChanged(SimulationState state)
+    {
+        InvokeAsync(() =>
+        {
+            _isPlaying = state.IsPlaying;
+            _simulationProgress = state.Progress * 100; // 0-100 for slider
+            _currentTime = _simService.CurrentTimeSeconds;
+            _totalTime = _simService.TotalTimeSeconds;
+            _toolX = state.X;
+            _toolY = state.Y;
+            
+            if (state.CurrentLine != null && state.CurrentLine != _document?.SelectedLine)
+            {
+               // Auto scroll/select line during sync?
+               // User requirement 5d: "Highlight line N"
+               if (_isPlaying)
+               {
+                   HandleLineSelected(state.CurrentLine);
+               }
+            }
+            StateHasChanged();
+        });
+    }
+
+    private void InitializeEmptyDocument()
+    {
+        _document = new GCodeDocument();
+        _document.FileName = "untitled.nc";
+        _simService.Load(_document);
+    }
+    
+    private void ToggleTheme()
+    {
+        _isDarkMode = !_isDarkMode;
+    }
+    
+    private void HandleUndo() => _cmdManager.Undo();
+    private void HandleRedo() => _cmdManager.Redo();
+    
+    // File operations
+    private async Task HandleOpenProject()
+    {
+        var doc = await ProjectService.OpenProjectAsync();
+        if (doc != null)
+        {
+            _document = doc;
+            _simService.Load(doc);
+            _cmdManager.Clear();
+            StateHasChanged();
+        }
+    }
+    
+    private async Task HandleImportGCode()
+    {
+        var doc = await ProjectService.ImportGCodeAsync();
+        if (doc != null)
+        {
+            _document = doc;
+            _simService.Load(doc);
+            _cmdManager.Clear();
+            StateHasChanged();
+        }
+    }
+    
+    private async Task HandleImportDxf()
+    {
+        // 1. Pick File
+        var path = await ProjectService.PickDxfFileAsync();
+        if (!string.IsNullOrEmpty(path))
+        {
+            _pendingDxfPath = path;
+            _dxfOptions = new DxfImportOptions(); // Reset to defaults
+            _showDxfDialog = true;
+            StateHasChanged();
+        }
+    }
+    
+    private void HandleDxfImportCancel()
+    {
+        _showDxfDialog = false;
+        _pendingDxfPath = null;
+        StateHasChanged();
+    }
+    
+    private async Task HandleDxfImportConfirm(DxfImportOptions options)
+    {
+        if (string.IsNullOrEmpty(_pendingDxfPath)) 
+        {
+            return;
+        }
+        
+        try 
+        {
+            // Load with Options
+            var doc = _dxfParser.LoadDxf(_pendingDxfPath, options);
+            
+            if (doc != null)
+            {
+                _document = doc;
+                _simService.Load(doc);
+                _cmdManager.Clear();
+                _showDxfDialog = false;
+                _pendingDxfPath = null;
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error importing DXF: {ex.Message}");
+            _showDxfDialog = false;
+        }
+    }
+    
+    private async Task HandleSaveProject()
+    {
+        if (_document != null)
+        {
+            await ProjectService.SaveProjectAsync(_document);
+        }
+    }
+    
+    private async Task HandleExportGCode()
+    {
+        if (_document != null)
+        {
+            await ProjectService.ExportGCodeAsync(_document);
+        }
+    }
+    
+    private void HandleLineSelected(GCodeLine line)
+    {
+        if (_document == null) return;
+        
+        // 在扁平化列表中查找索引（支持多段线子行）
+        var flatLines = _document.GetFlatLines();
+        var index = flatLines.IndexOf(line);
+        if (index >= 0)
+        {
+            _document.SelectedIndex = index;
+        }
+    }
+    
+    private void HandleLineIndexSelected(int flatIndex)
+    {
+        if (_document == null) return;
+        _document.SelectedIndex = flatIndex;
+        StateHasChanged();
+    }
+    
+    private void HandlePlay() 
+    { 
+        if (_isPlaying) _simService.Pause(); else _simService.Play(); 
+    }
+    private void HandleStop() { _simService.Stop(); }
+    // Slider sends 0-100
+    private void HandleProgressChanged(double progress) { _simService.Seek(progress / 100.0); }
+    private void HandleSpeedChanged(double speed) { _simService.SetSpeed(speed); } // Speed multiplier
+    
+    private void HandleContentChanged()
+    {
+        // 递增刷新 key 强制画布重新生成路径
+        _canvasRefreshKey++;
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        _simTimer?.Dispose();
+    }
+    
+    private void HandleLeftSplitterResize(double delta)
+    {
+        _leftPanelWidth = Math.Clamp(_leftPanelWidth + delta, 250, 600);
+        StateHasChanged();
+    }
+    
+    private void HandleBottomSplitterResize(double delta)
+    {
+        _canvasRatio = Math.Clamp(_canvasRatio + delta / 500, 0.3, 0.8);
+        _canvasFlexBasis = (_canvasRatio * 5).ToString("F1");
+        _editorFlexBasis = ((1 - _canvasRatio) * 5).ToString("F1");
+        StateHasChanged();
+    }
+    
+    private void ToggleEditorCollapse()
+    {
+        _editorCollapsed = !_editorCollapsed;
+    }
+}

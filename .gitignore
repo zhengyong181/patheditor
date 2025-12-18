@@ -1,0 +1,12 @@
+bin/
+obj/
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userprefs
+*.lock.json
+Thumbs.db
+.DS_Store
+anay_cross/
