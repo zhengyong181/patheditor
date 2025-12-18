@@ -3,6 +3,7 @@
 @using GCodeWorkbench.UI.Services
 @inject IJSRuntime JS
 @inject SvgRenderService SvgService
+@inject SimulationService SimService
 @implements IDisposable
 
 <style>
@@ -158,8 +159,8 @@
     [Parameter] public double PlaybackSpeed { get; set; }
     [Parameter] public double CurrentTime { get; set; }
     [Parameter] public double TotalTime { get; set; }
-    [Parameter] public double ToolX { get; set; }
-    [Parameter] public double ToolY { get; set; }
+    // ToolX and ToolY removed for performance - handled internally via SimService subscription
+
     [Parameter] public EventCallback OnPlay { get; set; }
     [Parameter] public EventCallback OnStop { get; set; }
     [Parameter] public EventCallback<double> OnProgressChanged { get; set; }
@@ -181,6 +182,29 @@
     private double _vbX = 0, _vbY = 0, _vbW = 100, _vbH = 100;
     private double _initialVbX, _initialVbY, _initialVbW, _initialVbH;
     private string _viewBox => $"{_vbX.ToString(System.Globalization.CultureInfo.InvariantCulture)} {_vbY.ToString(System.Globalization.CultureInfo.InvariantCulture)} {_vbW.ToString(System.Globalization.CultureInfo.InvariantCulture)} {_vbH.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+
+    protected override void OnInitialized()
+    {
+        // Direct subscription to SimulationService to update JS Tool Position without re-rendering Blazor component
+        SimService.OnStateChanged += OnSimStateChanged;
+    }
+
+    private void OnSimStateChanged(SimulationState state)
+    {
+        // We only want to update the JS tool position, NOT trigger StateHasChanged for the whole component
+        // unless other parameters changed (which happens via parent update anyway).
+        // This runs on a background thread potentially (via Timer), so we must be careful with JS Interop which needs UI thread.
+        // However, InvokeAsync manages the synchronization context.
+        InvokeAsync(async () =>
+        {
+            try
+            {
+                bool visible = state.IsPlaying || state.Progress > 0;
+                await JS.InvokeVoidAsync("canvasHelper.setToolPosition", _canvasId, state.X, state.Y, visible);
+            }
+            catch { /* Ignore JS errors during dispose/shutdown */ }
+        });
+    }
 
     protected override void OnParametersSet()
     {
@@ -393,13 +417,10 @@
             }
         }
         
-        // 更新刀头位置（由 JS 管理屏幕坐标，包括视图变化时的更新）
-        try
-        {
-            bool visible = IsPlaying || SimulationProgress > 0;
-            await JS.InvokeVoidAsync("canvasHelper.setToolPosition", _canvasId, ToolX, ToolY, visible);
-        }
-        catch { }
+        // Removed setToolPosition here because it's now event-driven.
+        // We only init the canvas state.
+        // Actually, if we switch tabs or re-render, we might want to restore the last tool position.
+        // But the SimService events will keep it updated.
     }
     
     private bool _jsViewBoxUpdated = false;
@@ -447,6 +468,7 @@
     public void Dispose()
     {
         _dotNetRef?.Dispose();
+        SimService.OnStateChanged -= OnSimStateChanged;
     }
 }
 

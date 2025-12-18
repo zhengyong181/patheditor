@@ -284,6 +284,9 @@
         
         if (oldIndex >= 0 && newIndex >= 0)
         {
+            // Update: Invalidate cache when structure changes
+            Document.InvalidateCache();
+
             // Use Command Pattern for Undo support
             var moveCmd = new MoveItemCommand<GCodeLine>(list, oldIndex, newIndex);
             CommandManager?.Execute(moveCmd);
@@ -362,6 +365,9 @@
     private void ToggleCollapse(GCodeLine line)
     {
         line.IsCollapsed = !line.IsCollapsed;
+        // Invalidate cache when visibility changes?
+        // No, _cachedFlatLines is for ALL lines, not visible lines.
+        // GetVisibleLines logic uses IsCollapsed but structure is same.
         OnStateChanged.InvokeAsync();
     }
     

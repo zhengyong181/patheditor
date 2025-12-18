@@ -9,6 +9,7 @@ namespace GCodeWorkbench.UI.Models;
 public class GCodeDocument : INotifyPropertyChanged
 {
     private List<GCodeLine> _lines = new();
+    private List<GCodeLine>? _cachedFlatLines;
     private int _selectedIndex = -1;
     private string _fileName = "untitled.nc";
     private bool _isDirty = false;
@@ -16,7 +17,12 @@ public class GCodeDocument : INotifyPropertyChanged
     public List<GCodeLine> Lines
     {
         get => _lines;
-        set { _lines = value; OnPropertyChanged(); }
+        set
+        {
+            _lines = value;
+            InvalidateCache();
+            OnPropertyChanged();
+        }
     }
     
     public int SelectedIndex
@@ -66,6 +72,7 @@ public class GCodeDocument : INotifyPropertyChanged
     /// 获取 G 代码文本
     /// </summary>
     public string GetGCodeText() => GenerateGCode();
+
     /// <summary>
     /// 获取所有可见行（考虑折叠状态）
     /// </summary>
@@ -91,14 +98,31 @@ public class GCodeDocument : INotifyPropertyChanged
     /// </summary>
     public List<GCodeLine> GetFlatLines()
     {
+        if (_cachedFlatLines != null)
+        {
+            return _cachedFlatLines;
+        }
+
         var result = new List<GCodeLine>();
         foreach (var line in _lines)
         {
             result.AddRange(line.GetAllLines());
         }
+
+        _cachedFlatLines = result;
         return result;
     }
     
+    /// <summary>
+    /// Invalidate the flat line cache.
+    /// Should be called whenever the structure of Lines (add/remove/reorder) changes.
+    /// Property changes (X/Y/Z) do not require invalidation unless they affect structure.
+    /// </summary>
+    public void InvalidateCache()
+    {
+        _cachedFlatLines = null;
+    }
+
     /// <summary>
     /// 生成 G 代码文本
     /// </summary>

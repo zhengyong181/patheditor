@@ -10,6 +10,9 @@ public class SimulationService
     private bool _isPlaying;
     private double _speedMultiplier = 1.0;
     
+    // Performance optimization: track last accessed index
+    private int _lastSegmentIndex = 0;
+
     // Default speeds if not specified (mm/sec)
     private const double DefaultRapidFeed = 100; // Fallback: 100 mm/sec
     private const double DefaultCutFeed = 10;    // Fallback: 10 mm/sec
@@ -30,6 +33,7 @@ public class SimulationService
         _currentTime = TimeSpan.Zero;
         _totalDuration = TimeSpan.Zero;
         _isPlaying = false;
+        _lastSegmentIndex = 0;
         
         double curX = 0, curY = 0, curZ = 0;
         double currentFeed = DefaultCutFeed;
@@ -126,6 +130,8 @@ public class SimulationService
     public void Seek(double progress)
     {
         _currentTime = _totalDuration * Math.Clamp(progress, 0, 1);
+        // Reset index hint on seek to ensure correctness
+        _lastSegmentIndex = 0;
         Notify();
     }
     
@@ -152,14 +158,42 @@ public class SimulationService
     
     private void Notify()
     {
-        // Find current segment
-        var currentSeg = _segments.FirstOrDefault(s => s.StartTime <= _currentTime && (s.StartTime + s.Duration) >= _currentTime);
+        MotionSegment? currentSeg = null;
         
-        // If not found (e.g. finished), use last
-        if (currentSeg == null && _segments.Count > 0)
+        if (_segments.Count > 0)
         {
-            if (_currentTime >= _totalDuration) currentSeg = _segments.Last();
-            else currentSeg = _segments.First();
+            // Optimization: Start search from _lastSegmentIndex
+            // Since time usually moves forward, this makes lookup O(1) in most cases
+            int count = _segments.Count;
+            if (_lastSegmentIndex >= count) _lastSegmentIndex = count - 1;
+
+            // Check if we need to rewind (rare, only if manual time set backwards without Seek)
+            if (_lastSegmentIndex > 0 && _segments[_lastSegmentIndex].StartTime > _currentTime)
+            {
+                _lastSegmentIndex = 0;
+            }
+
+            for (int i = _lastSegmentIndex; i < count; i++)
+            {
+                var s = _segments[i];
+                if (s.StartTime <= _currentTime && (s.StartTime + s.Duration) >= _currentTime)
+                {
+                    currentSeg = s;
+                    _lastSegmentIndex = i;
+                    break;
+                }
+
+                // If we passed the current time (segments are ordered), then we won't find it later
+                if (s.StartTime > _currentTime)
+                    break;
+            }
+
+            // If still null (e.g. finished), use last
+            if (currentSeg == null)
+            {
+                if (_currentTime >= _totalDuration) currentSeg = _segments.Last();
+                else if (_currentTime <= TimeSpan.Zero) currentSeg = _segments.First();
+            }
         }
         
         var state = new SimulationState
