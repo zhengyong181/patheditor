@@ -10,7 +10,9 @@
         <div class="flex items-center gap-2">
             <!-- Play/Pause Button -->
             <button class="size-7 shrink-0 rounded-full flex items-center justify-center bg-primary text-[#122118] hover:brightness-110 transition shadow-sm"
-                    @onclick="OnPlayToggle">
+                    @onclick="OnPlayToggle"
+                    aria-label="@(IsPlaying ? "Pause simulation" : "Play simulation")"
+                    title="@(IsPlaying ? "Pause" : "Play")">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
                     @if (IsPlaying)
                     {
@@ -25,7 +27,9 @@
             </button>
             <!-- Stop Button -->
             <button class="size-7 shrink-0 rounded-full flex items-center justify-center bg-white/10 text-white/70 hover:bg-white/20 transition shadow-sm"
-                    @onclick="OnStop">
+                    @onclick="OnStop"
+                    aria-label="Stop simulation"
+                    title="Stop">
                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
                     <rect x="6" y="6" width="12" height="12" rx="1"/>
                 </svg>
@@ -44,6 +48,8 @@
                            step="1" 
                            value="@GetLocalSliderValue()"
                            @oninput="HandleSpeedSliderInput"
+                           aria-label="Playback speed"
+                           title="Playback speed"
                            class="w-full h-1 bg-black/40 rounded-lg appearance-none cursor-pointer accent-primary relative z-10" />
                 </div>
                 <span class="text-[9px] font-mono text-white/70 w-6 text-right shrink-0">@GetCurrentDisplaySpeed().ToString("F1")x</span>
@@ -59,6 +65,8 @@
                        step="0.1" 
                        value="@Progress"
                        @oninput="HandleProgressChange"
+                       aria-label="Simulation progress"
+                       title="Simulation progress"
                        class="w-full h-1 bg-black/40 rounded-lg appearance-none cursor-pointer accent-primary" />
              </div>
             <span class="text-[9px] font-mono text-white/70 w-6 text-right shrink-0">@Progress.ToString("F0")%</span>
