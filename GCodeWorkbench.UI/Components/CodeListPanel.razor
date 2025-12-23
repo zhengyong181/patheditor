@@ -63,7 +63,7 @@
             <div class="flex flex-col" style="min-width: max-content;">
             @if (Document != null)
             {
-                <Virtualize Items="@Document.GetVisibleLines().ToList()" Context="item" OverscanCount="20" ItemSize="35">
+                <Virtualize Items="@GetFilteredLines()" Context="item" OverscanCount="20" ItemSize="35">
                     @{
                         var line = item.Line;
                         var index = item.FlatIndex;
@@ -346,11 +346,7 @@
         // Build Menu
         _contextMenuItems = new List<ContextMenu.MenuItem>
         {
-            new() { Label = "Edit G-Code", Action = () => StartEditRawCode(line) },
-            new() { IsSeparator = true },
-            new() { Label = "Toggle 'Finish'", Action = () => ToggleTag("Finish") },
-            new() { Label = "Toggle 'Roughing'", Action = () => ToggleTag("Roughing") },
-            new() { Label = "Clear Tags", Action = () => { line.Tags.Clear(); line.Label = ""; } }
+            new() { Label = "Edit G-Code", Action = () => StartEditRawCode(line) }
         };
     }
     
@@ -396,6 +392,36 @@
     {
         line.IsCollapsed = !line.IsCollapsed;
         OnStateChanged.InvokeAsync();
+    }
+    
+    private List<(GCodeLine Line, int FlatIndex)> GetFilteredLines()
+    {
+        if (Document == null) return new();
+        
+        var allLines = Document.GetVisibleLines().ToList();
+        
+        if (string.IsNullOrWhiteSpace(_filterText))
+            return allLines;
+        
+        var filter = _filterText.Trim().ToLower();
+        
+        return allLines.Where(item =>
+        {
+            var line = item.Line;
+            // 匹配行号
+            if (line.LineNumber.ToString().Contains(filter))
+                return true;
+            // 匹配命令
+            if (!string.IsNullOrEmpty(line.Command) && line.Command.ToLower().Contains(filter))
+                return true;
+            // 匹配原始文本
+            if (!string.IsNullOrEmpty(line.RawText) && line.RawText.ToLower().Contains(filter))
+                return true;
+            // 匹配标签
+            if (line.Tags.Any(t => t.ToLower().Contains(filter)))
+                return true;
+            return false;
+        }).ToList();
     }
     
     private string GetRowClass(GCodeLine line)
