@@ -147,6 +147,32 @@
             </div>
         }
     </ContextMenu>
+    
+    @* Edit Raw G-Code Dialog *@
+    @if (_isEditingRawCode && _editingLine != null)
+    {
+        <div class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center" @onclick="CancelEditRawCode">
+            <div class="bg-[#1e1e1e] border border-border-dark w-[500px] shadow-2xl rounded-xl flex flex-col" @onclick:stopPropagation="true">
+                <div class="h-10 border-b border-border-dark flex items-center px-4 justify-between bg-surface-dark/50 rounded-t-xl">
+                    <span class="font-medium text-text-primary text-sm">Edit G-Code - Line @_editingLine.LineNumber</span>
+                    <button class="text-text-dim hover:text-white transition-colors" @onclick="CancelEditRawCode">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                </div>
+                <div class="p-4">
+                    <input class="w-full h-10 bg-black/30 border border-border-dark rounded px-3 text-white font-mono text-sm focus:border-primary focus:outline-none"
+                           @bind="_editRawCodeText"
+                           @onkeydown="HandleEditKeyDown"
+                           placeholder="Enter G-Code..." />
+                    <p class="text-text-dim text-[10px] mt-2">Press Enter to save, Escape to cancel</p>
+                </div>
+                <div class="p-3 border-t border-border-dark flex justify-end gap-2 bg-surface-dark/30 rounded-b-xl">
+                    <button class="h-8 px-3 rounded border border-border-dark hover:bg-white/5 text-text-primary text-xs" @onclick="CancelEditRawCode">Cancel</button>
+                    <button class="h-8 px-4 rounded bg-primary hover:bg-primary/90 text-white text-xs font-medium" @onclick="SaveEditRawCode">Save</button>
+                </div>
+            </div>
+        </div>
+    }
 </aside>
 
 @code {
@@ -174,6 +200,11 @@
     private GCodeLine? _contextLine;
     private string _newTagText = "";
     private List<ContextMenu.MenuItem> _contextMenuItems = new();
+    
+    // Edit Raw G-Code State
+    private bool _isEditingRawCode;
+    private GCodeLine? _editingLine;
+    private string _editRawCodeText = "";
 
     private GCodeLine? _draggedLine;
 
@@ -315,6 +346,8 @@
         // Build Menu
         _contextMenuItems = new List<ContextMenu.MenuItem>
         {
+            new() { Label = "Edit G-Code", Action = () => StartEditRawCode(line) },
+            new() { IsSeparator = true },
             new() { Label = "Toggle 'Finish'", Action = () => ToggleTag("Finish") },
             new() { Label = "Toggle 'Roughing'", Action = () => ToggleTag("Roughing") },
             new() { Label = "Clear Tags", Action = () => { line.Tags.Clear(); line.Label = ""; } }
@@ -406,5 +439,94 @@
     {
         var baseClass = "px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase flex items-center gap-1";
         return $"{baseClass} bg-slate-700 text-slate-200 border border-slate-600";
+    }
+    
+    // Edit Raw G-Code Methods
+    private void StartEditRawCode(GCodeLine line)
+    {
+        _editingLine = line;
+        _editRawCodeText = line.DisplayText;
+        _isEditingRawCode = true;
+        HideContextMenu();
+    }
+    
+    private void CancelEditRawCode()
+    {
+        _isEditingRawCode = false;
+        _editingLine = null;
+        _editRawCodeText = "";
+    }
+    
+    private void SaveEditRawCode()
+    {
+        if (_editingLine == null || string.IsNullOrWhiteSpace(_editRawCodeText)) return;
+        
+        var oldText = _editingLine.DisplayText;
+        var newText = _editRawCodeText.Trim();
+        
+        if (CommandManager != null)
+        {
+            var cmd = new SetPropertyCommand<string>(
+                v => {
+                    _editingLine.RawText = v;
+                    // 重新解析命令和参数
+                    ParseRawTextToLine(_editingLine, v);
+                },
+                oldText,
+                newText,
+                $"Edit G-Code: {oldText} → {newText}"
+            );
+            CommandManager.Execute(cmd);
+        }
+        else
+        {
+            _editingLine.RawText = newText;
+            ParseRawTextToLine(_editingLine, newText);
+        }
+        
+        CancelEditRawCode();
+        OnStateChanged.InvokeAsync();
+    }
+    
+    private void ParseRawTextToLine(GCodeLine line, string rawText)
+    {
+        // 简单解析逻辑：提取命令和参数
+        var text = rawText.Trim();
+        
+        // 提取第一个G/M/F/S命令
+        var cmdMatch = System.Text.RegularExpressions.Regex.Match(text, @"^([GMFS]\d*\.?\d*|RAPID|LINEAR|ARC[12])", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (cmdMatch.Success)
+        {
+            line.Command = cmdMatch.Value.ToUpper();
+        }
+        
+        // 提取参数
+        var paramMatches = System.Text.RegularExpressions.Regex.Matches(text, @"([XYZIJKRFS])\s*(=?\s*-?\d+\.?\d*)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        foreach (System.Text.RegularExpressions.Match match in paramMatches)
+        {
+            var param = match.Groups[1].Value.ToUpper();
+            var valStr = match.Groups[2].Value.Replace("=", "").Trim();
+            if (double.TryParse(valStr, out var value))
+            {
+                switch (param)
+                {
+                    case "X": line.X = value; break;
+                    case "Y": line.Y = value; break;
+                    case "Z": line.Z = value; break;
+                    case "I": line.I = value; break;
+                    case "J": line.J = value; break;
+                    case "K": line.K = value; break;
+                    case "R": line.R = value; break;
+                    case "F": line.F = value; break;
+                    case "S": line.S = value; break;
+                }
+            }
+        }
+    }
+    
+    private void HandleEditKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") SaveEditRawCode();
+        if (e.Key == "Escape") CancelEditRawCode();
     }
 }
