@@ -58,7 +58,7 @@ public class DxfParserService
         
         // 1.5 添加 Feed Rate 命令 (F 在程序头生成，单位 mm/sec)
         // 同时设置 F 属性，以便 SimulationService 可以读取
-        AddLine(gcodeDoc, ref lineNumber, GCodeType.Setup, "F", "", "Feed Rate (mm/sec)", "", null, f: options.FeedRate, customRawText: $"F{options.FeedRate:F1}");
+        AddLine(gcodeDoc, ref lineNumber, GCodeType.Setup, $"F{options.FeedRate:F1}", "", "Feed Rate (mm/sec)", "", null, f: options.FeedRate, customRawText: $"F{options.FeedRate:F1}");
         
         // 2. 将实体转换为 G 代码
         // 处理 LINE
