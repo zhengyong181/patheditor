@@ -99,6 +99,14 @@ public class GCodeParser
             }
         }
         
+        // 处理纯 F/S 命令行 (如 "F10.0" 或 "S1000")
+        if (string.IsNullOrEmpty(line.Command) && (line.F.HasValue || line.S.HasValue))
+        {
+            // 使用原始文本作为 Command（去除空格）
+            line.Command = codeText.Trim();
+            line.Type = GCodeType.Setup;
+        }
+        
         return line;
     }
     
