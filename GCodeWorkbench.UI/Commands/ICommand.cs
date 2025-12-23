@@ -97,3 +97,51 @@ public class CompositeCommand : ICommand
             _commands[i].Undo();
     }
 }
+
+/// <summary>
+/// 插入列表项的命令
+/// </summary>
+public class InsertItemCommand<T> : ICommand
+{
+    private readonly IList<T> _list;
+    private readonly T _item;
+    private readonly int _index;
+    private readonly string _description;
+    
+    public string Description => _description;
+    
+    public InsertItemCommand(IList<T> list, T item, int index, string description = "Insert Item")
+    {
+        _list = list;
+        _item = item;
+        _index = index;
+        _description = description;
+    }
+    
+    public void Execute() => _list.Insert(_index, _item);
+    public void Undo() => _list.RemoveAt(_index);
+}
+
+/// <summary>
+/// 删除列表项的命令
+/// </summary>
+public class DeleteItemCommand<T> : ICommand
+{
+    private readonly IList<T> _list;
+    private readonly T _item;
+    private readonly int _index;
+    private readonly string _description;
+    
+    public string Description => _description;
+    
+    public DeleteItemCommand(IList<T> list, T item, int index, string description = "Delete Item")
+    {
+        _list = list;
+        _item = item;
+        _index = index;
+        _description = description;
+    }
+    
+    public void Execute() => _list.RemoveAt(_index);
+    public void Undo() => _list.Insert(_index, _item);
+}

@@ -5,9 +5,12 @@
 
 <aside class="flex flex-col w-full h-full bg-surface-dark rounded-xl border border-border-dark overflow-hidden shadow-sm z-10"
        style="--col-line: @(_colLineWidth)px; --col-instruction: @(_colInstructionWidth)px; --col-label: 1fr; cursor: @(_resizingColumn != -1 ? "col-resize" : "default")"
+       tabindex="0"
        @onmousemove="HandleColumnResize"
        @onmouseup="StopResizing"
-       @onmouseleave="StopResizing">
+       @onmouseleave="StopResizing"
+       @onkeydown="HandleKeyDown"
+       @onkeydown:preventDefault="@ShouldPreventKeyDefault()">
     <!-- Search Bar -->
     <div class="p-2 border-b border-border-dark bg-[#15281d] shrink-0">
         <label class="flex flex-col w-full">
@@ -346,7 +349,12 @@
         // Build Menu
         _contextMenuItems = new List<ContextMenu.MenuItem>
         {
-            new() { Label = "Edit G-Code", Action = () => StartEditRawCode(line) }
+            new() { Label = "Edit G-Code", Action = () => StartEditRawCode(line) },
+            new() { IsSeparator = true },
+            new() { Label = "Insert Line Above", Shortcut = "Ctrl+Shift+I", Action = () => InsertLine(line, false) },
+            new() { Label = "Insert Line Below", Shortcut = "Ctrl+I", Action = () => InsertLine(line, true) },
+            new() { IsSeparator = true },
+            new() { Label = "Delete Line", Shortcut = "Del", Action = () => DeleteLine(line) }
         };
     }
     
@@ -554,5 +562,107 @@
     {
         if (e.Key == "Enter") SaveEditRawCode();
         if (e.Key == "Escape") CancelEditRawCode();
+    }
+    
+    // Insert/Delete Methods
+    private void InsertLine(GCodeLine referenceLine, bool insertAfter)
+    {
+        if (Document == null) return;
+        
+        var list = referenceLine.Parent?.Children ?? Document.Lines;
+        var index = list.IndexOf(referenceLine);
+        if (index < 0) return;
+        
+        var newLine = new GCodeLine
+        {
+            LineNumber = 0, // Will be renumbered
+            Command = "G01",
+            Type = GCodeType.Linear,
+            RawText = "G01 X0.000 Y0.000",
+            X = 0,
+            Y = 0
+        };
+        
+        var insertIndex = insertAfter ? index + 1 : index;
+        
+        // Use command pattern for undo support
+        if (CommandManager != null)
+        {
+            var cmd = new InsertItemCommand<GCodeLine>(list, newLine, insertIndex, $"Insert line at {insertIndex}");
+            CommandManager.Execute(cmd);
+        }
+        else
+        {
+            list.Insert(insertIndex, newLine);
+        }
+        
+        // Renumber lines
+        RenumberLines();
+        
+        // Start editing the new line
+        HideContextMenu();
+        StartEditRawCode(newLine);
+        OnStateChanged.InvokeAsync();
+    }
+    
+    private void DeleteLine(GCodeLine line)
+    {
+        if (Document == null) return;
+        
+        var list = line.Parent?.Children ?? Document.Lines;
+        var index = list.IndexOf(line);
+        if (index < 0) return;
+        
+        // Use command pattern for undo support
+        if (CommandManager != null)
+        {
+            var cmd = new DeleteItemCommand<GCodeLine>(list, line, index, $"Delete line {line.LineNumber}");
+            CommandManager.Execute(cmd);
+        }
+        else
+        {
+            list.Remove(line);
+        }
+        
+        RenumberLines();
+        HideContextMenu();
+        OnStateChanged.InvokeAsync();
+    }
+    
+    private void RenumberLines()
+    {
+        if (Document == null) return;
+        int lineNum = 1;
+        foreach (var line in Document.GetFlatLines())
+        {
+            line.LineNumber = lineNum++;
+        }
+    }
+    
+    private void HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (SelectedLine == null) return;
+        
+        // Delete
+        if (e.Key == "Delete")
+        {
+            DeleteLine(SelectedLine);
+        }
+        // Ctrl+I = Insert below
+        else if (e.Key == "i" && e.CtrlKey && !e.ShiftKey)
+        {
+            InsertLine(SelectedLine, true);
+        }
+        // Ctrl+Shift+I = Insert above
+        else if (e.Key == "I" && e.CtrlKey && e.ShiftKey)
+        {
+            InsertLine(SelectedLine, false);
+        }
+    }
+    
+    private bool ShouldPreventKeyDefault()
+    {
+        // Prevent default for Delete and Ctrl+I shortcuts when a line is selected
+        return SelectedLine != null;
     }
 }
