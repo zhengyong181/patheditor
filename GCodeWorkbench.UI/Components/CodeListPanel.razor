@@ -111,7 +111,7 @@
                                      @if(line.X.HasValue) { <ParameterPill Label="X" Value="@line.X" ValueChanged="@(v => UpdateParamWithCommand(line, l => l.X, (l, val) => l.X = val, v, "X"))" ColorClass="text-red-400" /> }
                                      @if(line.Y.HasValue) { <ParameterPill Label="Y" Value="@line.Y" ValueChanged="@(v => UpdateParamWithCommand(line, l => l.Y, (l, val) => l.Y = val, v, "Y"))" ColorClass="text-green-400" /> }
                                      @if(line.Z.HasValue) { <ParameterPill Label="Z" Value="@line.Z" ValueChanged="@(v => UpdateParamWithCommand(line, l => l.Z, (l, val) => l.Z = val, v, "Z"))" ColorClass="text-blue-400" /> }
-                                     @if(line.F.HasValue) { <ParameterPill Label="F" Value="@line.F" ValueChanged="@(v => UpdateParamWithCommand(line, l => l.F, (l, val) => l.F = val, v, "F"))" ColorClass="text-orange-400" /> }
+                                     @if(line.F.HasValue && line.Type != GCodeType.Setup) { <ParameterPill Label="F" Value="@line.F" ValueChanged="@(v => UpdateParamWithCommand(line, l => l.F, (l, val) => l.F = val, v, "F"))" ColorClass="text-orange-400" /> }
                                      @if(line.S.HasValue) { <ParameterPill Label="S" Value="@line.S" ValueChanged="@(v => UpdateParamWithCommand(line, l => l.S, (l, val) => l.S = val, v, "S"))" ColorClass="text-purple-400" /> }
                                  </div>
                              }
