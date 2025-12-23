@@ -37,6 +37,36 @@ public class GCodeLine
     public string TypeLabel => Type.GetLabel();
     public string TypeColor => Type.GetColor();
     
+    /// <summary>
+    /// 获取用于显示的完整 G 代码文本（优先使用 RawText，否则动态生成）
+    /// </summary>
+    public string DisplayText => !string.IsNullOrEmpty(RawText) ? RawText : GenerateGCodeText();
+    
+    /// <summary>
+    /// 根据当前属性动态生成 G 代码文本
+    /// </summary>
+    private string GenerateGCodeText()
+    {
+        var parts = new List<string>();
+        
+        // 添加命令
+        if (!string.IsNullOrEmpty(Command))
+            parts.Add(Command);
+        
+        // 添加坐标参数
+        if (X.HasValue) parts.Add($"X{X.Value:F3}");
+        if (Y.HasValue) parts.Add($"Y{Y.Value:F3}");
+        if (Z.HasValue) parts.Add($"Z{Z.Value:F3}");
+        if (I.HasValue) parts.Add($"I{I.Value:F3}");
+        if (J.HasValue) parts.Add($"J{J.Value:F3}");
+        if (K.HasValue) parts.Add($"K{K.Value:F3}");
+        if (R.HasValue) parts.Add($"R{R.Value:F3}");
+        if (F.HasValue && Type != GCodeType.Setup) parts.Add($"F{F.Value:F1}");
+        if (S.HasValue) parts.Add($"S{S.Value:F0}");
+        
+        return string.Join(" ", parts);
+    }
+    
     private string GetParametersString()
     {
         var parts = new List<string>();
