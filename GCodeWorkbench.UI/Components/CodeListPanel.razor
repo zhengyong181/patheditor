@@ -165,7 +165,9 @@
                 <div class="p-4">
                     <input class="w-full h-10 bg-black/30 border border-border-dark rounded px-3 text-white font-mono text-sm focus:border-primary focus:outline-none"
                            @bind="_editRawCodeText"
+                           @bind:event="oninput"
                            @onkeydown="HandleEditKeyDown"
+                           @onkeydown:stopPropagation="true"
                            placeholder="Enter G-Code..." />
                     <p class="text-text-dim text-[10px] mt-2">Press Enter to save, Escape to cancel</p>
                 </div>
