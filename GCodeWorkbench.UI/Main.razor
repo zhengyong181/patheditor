@@ -309,6 +309,13 @@
     {
         // 递增刷新 key 强制画布重新生成路径
         _canvasRefreshKey++;
+        
+        // 重新加载模拟数据以更新速度等参数
+        if (_document != null)
+        {
+            _simService.Load(_document);
+        }
+        
         StateHasChanged();
     }
 
