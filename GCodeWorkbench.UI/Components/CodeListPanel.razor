@@ -139,8 +139,10 @@
             <input class="w-full bg-black/30 border border-border-dark rounded px-2 py-1 text-xs text-white placeholder:text-text-dim/50 focus:border-primary outline-none"
                    placeholder="Add Label..."
                    @bind="_newTagText"
+                   @bind:event="oninput"
                    @onclick:stopPropagation="true"
-                   @onkeydown="HandleTagInputKey" />
+                   @onkeydown="HandleTagInputKey"
+                   @onkeydown:stopPropagation="true" />
         </div>
         @foreach(var item in _contextMenuItems)
         {
