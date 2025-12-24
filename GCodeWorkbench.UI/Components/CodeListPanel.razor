@@ -23,7 +23,9 @@
                 </div>
                 <input class="flex w-full min-w-0 flex-1 bg-transparent text-white focus:outline-none placeholder:text-text-dim/50 text-xs font-normal" 
                        placeholder="Filter line number or command..." 
-                       @bind="_filterText" />
+                       @bind="_filterText"
+                       @bind:event="oninput"
+                       @onkeydown:stopPropagation="true" />
             </div>
         </label>
     </div>
@@ -358,7 +360,9 @@
             new() { Label = "Insert Line Above", Shortcut = "Ctrl+Shift+I", Action = () => InsertLine(line, false) },
             new() { Label = "Insert Line Below", Shortcut = "Ctrl+I", Action = () => InsertLine(line, true) },
             new() { IsSeparator = true },
-            new() { Label = "Delete Line", Shortcut = "Del", Action = () => DeleteLine(line) }
+            new() { Label = "Delete Line", Shortcut = "Del", Action = () => DeleteLine(line) },
+            new() { IsSeparator = true },
+            new() { Label = "Clear Tags", Action = () => ClearTags(line) }
         };
     }
     
@@ -387,6 +391,13 @@
             _contextLine.Label = string.Join(", ", _contextLine.Tags);
         else 
             _contextLine.Label = "";
+    }
+    
+    private void ClearTags(GCodeLine line)
+    {
+        line.Tags.Clear();
+        line.Label = "";
+        OnStateChanged.InvokeAsync();
     }
     
     private void HandleTagInputKey(KeyboardEventArgs e)
