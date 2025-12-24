@@ -7,6 +7,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <RootNamespace>GCodeWorkbench</RootNamespace>
+    <Version>1.0.0</Version>
+    <Authors>ZhengYong</Authors>
+    <Company>ZhengYong</Company>
   </PropertyGroup>
 
   <ItemGroup>
