@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>GCodeWorkbench</RootNamespace>
+    <Version>1.0.0</Version>
+    <Authors>ZhengYong</Authors>
+    <Company>ZhengYong</Company>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Wpf" Version="8.0.91" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GCodeWorkbench.UI\GCodeWorkbench.UI.csproj" />
+  </ItemGroup>
+
+</Project>

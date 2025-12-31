@@ -1,0 +1,65 @@
+@namespace GCodeWorkbench.UI.Components
+@inject IJSRuntime JS
+
+@if (IsVertical)
+{
+    <div class="w-1.5 hover:w-2 mx-0.5 cursor-col-resize flex items-center justify-center group transition-all duration-300 hover:bg-primary/20 rounded z-20 @(_isDragging ? "bg-primary/30" : "")"
+         @onmousedown="StartDrag"
+         @onmousedown:stopPropagation="true">
+        <div class="h-8 w-1 bg-border-dark rounded-full group-hover:bg-primary transition-colors @(_isDragging ? "bg-primary" : "")"></div>
+    </div>
+}
+else
+{
+    <div class="h-1.5 hover:h-2 my-0.5 cursor-row-resize flex items-center justify-center group transition-all duration-300 hover:bg-primary/20 rounded z-20 w-full @(_isDragging ? "bg-primary/30" : "")"
+         @onmousedown="StartDrag"
+         @onmousedown:stopPropagation="true">
+        <div class="w-8 h-1 bg-border-dark rounded-full group-hover:bg-primary transition-colors @(_isDragging ? "bg-primary" : "")"></div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsVertical { get; set; } = true;
+    [Parameter] public EventCallback<double> OnResize { get; set; }
+    
+    private bool _isDragging = false;
+    private double _startPosition;
+    private DotNetObjectReference<Splitter>? _dotNetRef;
+
+    protected override void OnInitialized()
+    {
+        _dotNetRef = DotNetObjectReference.Create(this);
+    }
+
+    private async Task StartDrag(MouseEventArgs e)
+    {
+        _isDragging = true;
+        _startPosition = IsVertical ? e.ClientX : e.ClientY;
+        
+        await JS.InvokeVoidAsync("splitterHelper.startDrag", _dotNetRef, IsVertical);
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task OnMouseMove(double position)
+    {
+        if (_isDragging)
+        {
+            var delta = position - _startPosition;
+            _startPosition = position;
+            await OnResize.InvokeAsync(delta);
+        }
+    }
+
+    [JSInvokable]
+    public void OnMouseUp()
+    {
+        _isDragging = false;
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        _dotNetRef?.Dispose();
+    }
+}
